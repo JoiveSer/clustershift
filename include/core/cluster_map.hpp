@@ -26,6 +26,8 @@ public:
     [[nodiscard]] bool is_cluster_free(int64_t lcn) const noexcept;
     [[nodiscard]] uint64_t total_clusters() const noexcept { return total_clusters_; }
     [[nodiscard]] uint64_t free_clusters() const noexcept { return free_clusters_; }
+    [[nodiscard]] int64_t mft_zone_start() const noexcept { return mft_zone_start_; }
+    [[nodiscard]] int64_t mft_zone_end() const noexcept { return mft_zone_end_; }
 
 private:
     ClusterMap() = default;
@@ -34,6 +36,8 @@ private:
     int64_t starting_lcn_{0};
     uint64_t total_clusters_{0};
     uint64_t free_clusters_{0};
+    int64_t mft_zone_start_{-1};
+    int64_t mft_zone_end_{-1};
 };
 
 } // namespace clustershift::core

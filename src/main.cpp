@@ -202,6 +202,9 @@ void cmd_hogs(const std::wstring& target_path, size_t top_count) {
 
     const auto& r = *res;
     std::wcout << L"\n\033[1;37m=== Space-Hog Analysis: " << r.root_path << L" ===\033[0m\n";
+    std::wcout << L"  Storage Architecture: " 
+               << (r.is_rotational_hdd ? L"\033[1;33mMechanical HDD (Anti-Thrash 1-Thread Locked)\033[0m" : L"\033[1;32mFlash SSD/NVMe (Parallel Multi-Core Crawl)\033[0m")
+               << L" [" << r.threads_used << L" threads]\n";
     std::wcout << L"  Scanned: " << r.total_files << L" files across " << r.total_directories 
                << L" directories in \033[1;36m" << std::fixed << std::setprecision(2) << r.scan_duration_seconds << L"s\033[0m\n";
     std::wcout << L"  Total Aggregate Size: \033[1;32m" << format_size_human(r.total_bytes) << L"\033[0m\n\n";
@@ -363,9 +366,17 @@ void cmd_optimize(const std::filesystem::path& file_path, bool dry_run, uint64_t
         return;
     }
 
-    // Set background thread priority to prevent system / foreground UI stutter
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-    std::wcout << L"\033[90m[*] I/O Scheduler: Thread priority set to BELOW_NORMAL to prevent foreground stuttering.\033[0m\n";
+    // Set background thread priority (Very Low CPU + Disk I/O) to prevent foreground UI/gaming stutter
+    struct BackgroundIoGuard {
+        BackgroundIoGuard() {
+            SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+        }
+        ~BackgroundIoGuard() {
+            SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_END);
+        }
+    };
+    BackgroundIoGuard io_guard;
+    std::wcout << L"\033[90m[*] I/O Scheduler: Entering THREAD_MODE_BACKGROUND_BEGIN (CPU & Disk I/O dropped to Very Low Priority).\033[0m\n";
 
     std::wcout << L"[*] Analyzing file clusters...\n";
     auto report = clustershift::core::ExtentResolver::analyze_file(file_path);
@@ -404,11 +415,17 @@ void cmd_optimize(const std::filesystem::path& file_path, bool dry_run, uint64_t
     std::wcout << L"[*] File has " << report->extent_count << L" fragments across " 
                << report->total_clusters << L" clusters. Loading volume bitmap...\n";
 
+    std::wcout << L"[*] NTFS Architecture: Querying $MFT expansion zone boundaries to prevent system table fragmentation...\n";
     auto bitmap = clustershift::core::ClusterMap::load(volume->get());
     if (!bitmap.has_value()) {
         std::wcout << L"\033[1;31m[-] Failed to load volume bitmap: \033[0m" 
                    << clustershift::core::format_win32_error(bitmap.error()) << L"\n";
         return;
+    }
+
+    if (bitmap->mft_zone_start() >= 0) {
+        std::wcout << L"    \033[90m-> Reserved $MFT Zone: LCN [" << bitmap->mft_zone_start() 
+                   << L" .. " << bitmap->mft_zone_end() << L"] (Guaranteed protected from user clusters)\033[0m\n";
     }
 
     std::wcout << L"[*] ZBR Platter Architecture: Searching for continuous space starting from lowest LCN (outer cylinders) for peak linear bandwidth (220-260 MB/s)...\n";

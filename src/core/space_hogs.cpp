@@ -1,4 +1,5 @@
 #include "core/space_hogs.hpp"
+#include "core/volume_manager.hpp"
 #include <windows.h>
 #include <queue>
 #include <unordered_map>
@@ -142,6 +143,20 @@ std::expected<SpaceHogsReport, DWORD> SpaceHogsScanner::scan(
     SpaceHogsReport report{};
     report.root_path = root;
 
+    // Physics-Aware Seek Penalty & Media Type Check:
+    // On rotational HDDs (IncursSeekPenalty = TRUE), concurrent threads reading disparate
+    // directory clusters thrash the mechanical actuator arm (4-12ms seek penalties per branch).
+    // Force sequential single-thread scanning on HDDs to maintain smooth track streaming.
+    // On SSDs/NVMe (IncursSeekPenalty = FALSE), unleash all CPU hardware concurrency cores!
+    bool is_hdd = false;
+    if (root.size() >= 2 && root[1] == L':') {
+        auto vol = VolumeManager::open_volume(root[0], false);
+        if (vol.has_value()) {
+            is_hdd = (VolumeManager::detect_drive_kind(vol->get()) == DriveKind::RotationalHdd);
+        }
+    }
+    report.is_rotational_hdd = is_hdd;
+
     // First, verify access and discover immediate subdirectories at root
     std::wstring initial_pattern = root + L"*";
     WIN32_FIND_DATAW fd;
@@ -208,9 +223,9 @@ std::expected<SpaceHogsReport, DWORD> SpaceHogsScanner::scan(
     } while (FindNextFileW(h_init, &fd));
     FindClose(h_init);
 
-    // Multi-threaded parallel processing of root subtrees
-    const unsigned int hw_concurrency = (std::max)(1u, std::thread::hardware_concurrency());
+    const unsigned int hw_concurrency = is_hdd ? 1u : (std::max)(1u, std::thread::hardware_concurrency());
     const size_t num_threads = (std::min)(static_cast<size_t>(hw_concurrency), work_items.size());
+    report.threads_used = static_cast<uint32_t>((std::max)(1ULL, static_cast<uint64_t>(num_threads)));
 
     if (num_threads > 1) {
         std::mutex queue_mutex;
@@ -275,7 +290,7 @@ std::expected<SpaceHogsReport, DWORD> SpaceHogsScanner::scan(
             report.top_subfolders.push_back(FolderSizeEntry{root + name, bytes});
         }
     } else {
-        // Single thread fallback
+        // Single thread path (sequential execution, optimal for rotational HDDs)
         ThreadScanResult single_res;
         for (const auto& item : work_items) {
             scan_subtree(item.dir_path, item.subfolder_name, top_count, single_res);

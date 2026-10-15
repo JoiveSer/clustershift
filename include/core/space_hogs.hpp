@@ -30,6 +30,8 @@ struct SpaceHogsReport {
     uint64_t total_files{0};
     uint64_t total_directories{0};
     double scan_duration_seconds{0.0};
+    bool is_rotational_hdd{false};
+    uint32_t threads_used{1};
     std::vector<FileEntry> top_files;
     std::vector<ExtensionStats> top_extensions;
     std::vector<FolderSizeEntry> top_subfolders;

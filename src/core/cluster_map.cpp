@@ -39,6 +39,14 @@ std::expected<ClusterMap, DWORD> ClusterMap::load(HANDLE volume_handle) {
     map.total_clusters_ = static_cast<uint64_t>(total_clusters);
     map.bitmap_data_.resize(total_bytes_needed, 0xFF); // Default to allocated
 
+    // Query NTFS MFT zone reservation to avoid polluting reserved MFT expansion space
+    NTFS_VOLUME_DATA_BUFFER ntfs_data{};
+    DWORD ntfs_bytes = 0;
+    if (DeviceIoControl(volume_handle, FSCTL_GET_NTFS_VOLUME_DATA, nullptr, 0, &ntfs_data, sizeof(ntfs_data), &ntfs_bytes, nullptr)) {
+        map.mft_zone_start_ = ntfs_data.MftZoneStart.QuadPart;
+        map.mft_zone_end_ = ntfs_data.MftZoneEnd.QuadPart;
+    }
+
     // Copy initial chunk
     const size_t header_offset = offsetof(VOLUME_BITMAP_BUFFER, Buffer);
     if (bytes_returned > header_offset) {
@@ -79,7 +87,7 @@ std::expected<ClusterMap, DWORD> ClusterMap::load(HANDLE volume_handle) {
         }
     }
 
-    // Count free clusters (0-bits)
+    // Count free clusters (0-bits, excluding MFT zone)
     uint64_t free_count = 0;
     for (uint64_t i = 0; i < map.total_clusters_; ++i) {
         if (map.is_cluster_free(static_cast<int64_t>(i))) {
@@ -94,6 +102,12 @@ std::expected<ClusterMap, DWORD> ClusterMap::load(HANDLE volume_handle) {
 bool ClusterMap::is_cluster_free(int64_t lcn) const noexcept {
     if (lcn < 0 || static_cast<uint64_t>(lcn) >= total_clusters_) {
         return false;
+    }
+    // Respect NTFS MFT reserved zone: never allocate user clusters inside MFT expansion boundary
+    if (mft_zone_start_ >= 0 && mft_zone_end_ > mft_zone_start_) {
+        if (lcn >= mft_zone_start_ && lcn < mft_zone_end_) {
+            return false;
+        }
     }
     const size_t byte_idx = static_cast<size_t>(lcn / 8);
     const uint8_t bit_idx = static_cast<uint8_t>(lcn % 8);

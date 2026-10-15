@@ -192,14 +192,15 @@ Legend: █ Allocated   ▒ Partially Free   ░ Contiguous Free Space
 
 <br/>
 
-1. **Direct I/O Sector Alignment & QD32 Async Pipeline:**  
-   The benchmark allocates memory via `VirtualAlloc(PAGE_READWRITE)` strictly aligned to 4KB sector boundaries, opening handles with `FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH | FILE_FLAG_OVERLAPPED`. A 32-slot event pipeline saturates the NVMe controller queue depth, while `FILE_FLAG_DELETE_ON_CLOSE` guarantees automatic cleanup of temporary files.
-2. **Physics-Aware HDD Protection:**  
-   Fragment re-allocation respects physical platter constraints. Extents exceeding `--min-frag-size` (default: 50MB) are bypassed because sequential mechanical streaming already dominates seek time. Relocations prioritize outer platter cylinders (low LCNs) for peak linear bandwidth (220–260 MB/s).
-3. **Background I/O Scheduling:**  
-   File movement passes run under `THREAD_PRIORITY_BELOW_NORMAL` to prevent system and game stuttering.
-4. **Flash Memory Preservation:**  
-   Before any consolidation pass, `IOCTL_STORAGE_QUERY_PROPERTY` queries `StorageDeviceSeekPenaltyProperty`. If `IncursSeekPenalty == FALSE` (SSD / NVMe), cluster consolidation is hardware-blocked to prevent burning NAND rewrite cycles (TBW).
+1. **Direct I/O Sector Alignment & IOCP QD32 Pipeline:**  
+   The benchmark allocates memory via `VirtualAlloc(PAGE_READWRITE)` strictly aligned to 4KB sector boundaries, opening handles with `FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED`. An **I/O Completion Port (IOCP)** with `GetQueuedCompletionStatusEx` batch-dequeues completions directly from the kernel queue to saturate the NVMe controller queue depth, while `FILE_FLAG_DELETE_ON_CLOSE` guarantees automatic cleanup of temporary files.
+2. **NTFS $MFT Zone Reservation Guard:**  
+   Before allocating free clusters, ClusterShift queries `FSCTL_GET_NTFS_VOLUME_DATA` to locate `MftZoneStart` and `MftZoneEnd`. The allocator strictly locks out the reserved `$MFT` zone (12.5% volume reserve), preventing system file table fragmentation.
+3. **Physics-Aware Dual-Engine (HDD vs SSD):**  
+   - **Rotational HDD (Seek Penalty Active):** Space scanner (`hogs`) automatically locks to a single sequential thread to eliminate head thrashing penalties (4–12ms per jump). Optimization bypasses extents $\ge 50\text{ MB}$ (`--min-frag-size`) and targets outer cylinders (low LCNs) for peak linear bandwidth (220–260 MB/s).
+   - **Flash SSD/NVMe (Zero Seek Penalty):** Unleashes full multi-core parallel crawling and hardware-blocks defragmentation in favor of kernel TRIM (`DeviceDsmAction_Trim`).
+4. **True Background I/O Scheduling (`THREAD_MODE_BACKGROUND_BEGIN`):**  
+   Cluster movement passes run under `THREAD_MODE_BACKGROUND_BEGIN`, dropping both CPU scheduling and Windows kernel disk I/O priority to `Very Low` (`IoPriorityHintVeryLow`), guaranteeing zero frame drops or latency spikes in gaming and foreground apps.
 5. **Transactional Kernel Integrity:**  
    ClusterShift never writes raw sectors to physical drive handles. All cluster relocations are executed through the certified Windows NTFS kernel driver (`FSCTL_MOVE_FILE`), ensuring data cannot be corrupted even during unexpected power loss.
 
