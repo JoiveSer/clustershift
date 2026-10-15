@@ -27,17 +27,19 @@ void print_banner() {
     std::wcout << L"\033[1;36m | |   | | | | / __| __/ _ \\ '__\\___ \\| '_ \\| | |_| __|\033[0m\n";
     std::wcout << L"\033[1;36m | |___| | |_| \\__ \\ ||  __/ |   ___) | | | | |  _| |_ \033[0m\n";
     std::wcout << L"\033[1;36m  \\____|_|\\__,_|___/\\__\\___|_|  |____/|_| |_|_|_|  \\__|\033[0m\n";
-    std::wcout << L"\033[1;35m  [ ARCHITECT & DEVELOPER: JOIVE ]\033[0m \033[90m- Universal Win32 Storage Optimizer v0.5\033[0m\n\n";
+    std::wcout << L"\033[1;35m  [ ARCHITECT & DEVELOPER: JOIVE ]\033[0m \033[90m- Universal Win32 Storage Suite v0.6.0\033[0m\n\n";
 }
 
 void print_usage() {
     std::wcout << L"\033[1;37mUsage:\033[0m clustershift <command> [arguments]\n";
-    std::wcout << L"       clustershift (run without arguments for Interactive Dashboard)\n\n";
+    std::wcout << L"       clustershift (run without arguments for Interactive Dashboard)\n";
+    std::wcout << L"       clustershift gui (launch native hardware-accelerated GUI)\n\n";
     std::wcout << L"\033[1;33mCommands:\033[0m\n";
-    std::wcout << L"  \033[1;32minfo <drive>\033[0m                                 Query volume geometry, media type & hardware bus\n";
-    std::wcout << L"  \033[1;32mhealth <drive>\033[0m                               Check S.M.A.R.T. health, bus & thermal telemetry\n";
-    std::wcout << L"  \033[1;32mbench <drive> [--quick]\033[0m                      Direct I/O benchmark (1GB / 128MB, QD32 4K IOPS)\n";
-    std::wcout << L"  \033[1;32mhogs <path> [--top N]\033[0m                        Parallel multi-core space-hog scanner\n";
+    std::wcout << L"  \033[1;32mgui\033[0m                                          Launch native hardware-accelerated GUI\n";
+    std::wcout << L"  \033[1;32minfo <drive>\033[0m                                 Query volume geometry, media type & DirectStorage\n";
+    std::wcout << L"  \033[1;32mhealth <drive>\033[0m                               Check S.M.A.R.T. health, bus & DirectStorage BypassIO\n";
+    std::wcout << L"  \033[1;32mbench <drive> [--quick]\033[0m                      Parallel IOCP benchmark (Q32Tx peak IOPS + Q1T1 latency)\n";
+    std::wcout << L"  \033[1;32mhogs <path> [--top N]\033[0m                        Adaptive space-hog scanner (multi-core SSD / seq HDD)\n";
     std::wcout << L"  \033[1;32mmap <drive>\033[0m                                  Render real-time ANSI cluster allocation map\n";
     std::wcout << L"  \033[1;32mscan <path> [--recursive]\033[0m                    Analyze file fragmentation & cluster extents\n";
     std::wcout << L"  \033[1;32mtrim <drive>\033[0m                                 Dispatch fast DSM/TRIM for SSD/NVMe flash maintenance\n";
@@ -154,6 +156,23 @@ void cmd_health(wchar_t drive_letter) {
             std::wcout << L"\033[1;32m" << telem->temperature_celsius << L" °C (Normal)\033[0m\n";
         }
     }
+
+    std::wcout << L"  DirectStorage:   ";
+    if (telem->bypass_io.is_supported) {
+        std::wcout << L"\033[1;32m[BYPASS_IO OPTIMAL - Hardware GPU Asset Streaming Ready]\033[0m\n";
+    } else if (telem->bypass_io.is_filter_blocked) {
+        std::wcout << L"\033[1;33m[BLOCKED BY FILTER DRIVER]\033[0m\n";
+        if (!telem->bypass_io.failing_driver.empty()) {
+            std::wcout << L"                   \033[90m-> Filter Driver: " << telem->bypass_io.failing_driver << L"\033[0m\n";
+        }
+        if (!telem->bypass_io.failure_reason.empty()) {
+            std::wcout << L"                   \033[90m-> Detail: " << telem->bypass_io.failure_reason << L"\033[0m\n";
+        }
+    } else if (!telem->bypass_io.failure_reason.empty()) {
+        std::wcout << L"\033[90m" << telem->bypass_io.failure_reason << L"\033[0m\n";
+    } else {
+        std::wcout << L"\033[90mLegacy volume stack (Not active)\033[0m\n";
+    }
     std::wcout << L"\n";
 }
 
@@ -162,7 +181,7 @@ void cmd_bench(wchar_t drive_letter, bool quick_mode) {
     std::wcout << L"[*] Initializing unbuffered storage benchmark on drive " << upper << L": ...\n";
     std::wcout << L"    \033[90m-> Mode: " << (quick_mode ? L"Quick (128 MB)" : L"Standard (1 GB)") 
                << L" | Direct I/O (Bypassing Windows OS File Cache)\033[0m\n";
-    std::wcout << L"    \033[90m-> Random 4K Engine: Overlapped Asynchronous I/O (Queue Depth = 32)\033[0m\n\n";
+    std::wcout << L"    \033[90m-> Random 4K Engine: Parallel Multi-Threaded IOCP + Q1T1 Latency Monitor\033[0m\n\n";
 
     auto res = clustershift::core::DiskBenchmark::run_benchmark(upper, 1024ULL * 1024 * 1024, quick_mode);
     if (!res.has_value()) {
@@ -172,23 +191,31 @@ void cmd_bench(wchar_t drive_letter, bool quick_mode) {
     }
 
     const auto& m = *res;
-    std::wcout << L"\033[1;37m+--------------------------------------------------------------+\033[0m\n";
-    std::wcout << L"\033[1;36m|          ClusterShift Hardware Storage Benchmark Results     |\033[0m\n";
-    std::wcout << L"\033[1;37m+--------------------------------------------------------------+\033[0m\n";
+    std::wcout << L"\033[1;37m+--------------------------------------------------------------------------------+\033[0m\n";
+    std::wcout << L"\033[1;36m|                 ClusterShift Hardware Storage Benchmark Results                |\033[0m\n";
+    std::wcout << L"\033[1;37m+--------------------------------------------------------------------------------+\033[0m\n";
     std::wcout << L"  Test Target:     Drive " << upper << L":\\ (Unbuffered Direct I/O)\n";
     std::wcout << L"  Sample Size:     " << (m.test_file_size_bytes / (1024 * 1024)) << L" MB\n\n";
 
-    std::wcout << L"  \033[1;33mSequential Write (1MB):\033[0m  \033[1;32m" 
+    std::wcout << L"  \033[1;33mSequential Write (1MB):\033[0m    \033[1;32m" 
                << std::fixed << std::setprecision(1) << std::setw(8) << m.seq_write_mbps << L" MB/s\033[0m\n";
-    std::wcout << L"  \033[1;33mSequential Read  (1MB):\033[0m  \033[1;32m" 
+    std::wcout << L"  \033[1;33mSequential Read  (1MB):\033[0m    \033[1;32m" 
                << std::fixed << std::setprecision(1) << std::setw(8) << m.seq_read_mbps << L" MB/s\033[0m\n";
-    std::wcout << L"  \033[1;33mRandom Read 4KB (QD32):\033[0m  \033[1;36m" 
+    std::wcout << L"  \033[1;33mRandom Read 4KB (Q32T" << m.thread_count << L"):\033[0m   \033[1;36m" 
                << std::fixed << std::setprecision(0) << std::setw(8) << m.rnd_4k_read_iops << L" IOPS\033[0m"
                << L" \033[90m(" << std::fixed << std::setprecision(1) << m.rnd_4k_read_mbps << L" MB/s)\033[0m\n";
+    if (m.rnd_4k_q1t1_iops > 0.0) {
+        std::wcout << L"  \033[1;33mRandom Read 4KB (Q1T1):\033[0m    \033[1;36m"
+                   << std::fixed << std::setprecision(0) << std::setw(8) << m.rnd_4k_q1t1_iops << L" IOPS\033[0m"
+                   << L" \033[90m(" << std::fixed << std::setprecision(1) << m.rnd_4k_q1t1_mbps << L" MB/s | Latency: "
+                   << std::fixed << std::setprecision(1) << m.rnd_4k_q1t1_avg_lat_us << L" us [min " 
+                   << m.rnd_4k_q1t1_min_lat_us << L" us / max " << m.rnd_4k_q1t1_max_lat_us << L" us])\033[0m\n";
+    }
     
-    std::wcout << L"\n  Queue Depth:     " << m.queue_depth << L" (Overlapped Async I/O)\n";
+    std::wcout << L"\n  Queue Depth:     " << m.queue_depth << L" (IOCP Multi-Threaded Batch Dequeue)\n";
+    std::wcout << L"  Worker Threads:  " << m.thread_count << L" concurrent kernel completions\n";
     std::wcout << L"  Total Duration:  " << std::fixed << std::setprecision(2) << m.duration_seconds << L" seconds\n";
-    std::wcout << L"\033[1;37m+--------------------------------------------------------------+\033[0m\n\n";
+    std::wcout << L"\033[1;37m+--------------------------------------------------------------------------------+\033[0m\n\n";
 }
 
 void cmd_hogs(const std::wstring& target_path, size_t top_count) {
@@ -603,7 +630,24 @@ int wmain(int argc, wchar_t* argv[]) {
 
     const std::wstring command = argv[1];
 
-    if (command == L"info" && argc >= 3) {
+    if (command == L"gui") {
+        wchar_t exe_path[MAX_PATH];
+        GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+        std::wstring dir = exe_path;
+        size_t pos = dir.find_last_of(L"\\/");
+        if (pos != std::wstring::npos) dir = dir.substr(0, pos);
+        std::wstring gui_exe = dir + L"\\clustershift-gui.exe";
+        STARTUPINFOW si{sizeof(si)};
+        PROCESS_INFORMATION pi{};
+        if (CreateProcessW(gui_exe.c_str(), nullptr, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+            std::wcout << L"\033[1;32m[+] ClusterShift GUI launched successfully.\033[0m\n";
+        } else {
+            std::wcout << L"\033[1;31m[-] Cannot find clustershift-gui.exe in application directory.\033[0m\n";
+        }
+        return 0;
+    } else if (command == L"info" && argc >= 3) {
         cmd_info(argv[2][0]);
     } else if (command == L"health" && argc >= 3) {
         cmd_health(argv[2][0]);

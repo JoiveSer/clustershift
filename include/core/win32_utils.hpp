@@ -59,4 +59,32 @@ namespace clustershift::core {
     return success && (last_error == ERROR_SUCCESS);
 }
 
+[[nodiscard]] inline std::string format_win32_error_a(DWORD error_code) {
+    std::wstring ws = format_win32_error(error_code);
+    std::string s;
+    s.reserve(ws.size());
+    for (wchar_t c : ws) {
+        s.push_back(static_cast<char>(c & 0x7F));
+    }
+    return s;
+}
+
+[[nodiscard]] inline bool is_user_elevated() noexcept {
+    HANDLE token = nullptr;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+        TOKEN_ELEVATION elevation{};
+        DWORD ret_len = 0;
+        if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &ret_len)) {
+            CloseHandle(token);
+            return elevation.TokenIsElevated != 0;
+        }
+        CloseHandle(token);
+    }
+    return false;
+}
+
+[[nodiscard]] inline bool set_se_manage_volume_privilege() noexcept {
+    return enable_privilege(SE_MANAGE_VOLUME_NAME);
+}
+
 } // namespace clustershift::core

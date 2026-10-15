@@ -114,6 +114,45 @@ std::expected<DiskHealthTelemetry, DWORD> DiskTelemetry::query_telemetry(HANDLE 
         }
     }
 
+    // 4. Query DirectStorage / BypassIO Telemetry (Windows 11)
+#ifdef FSCTL_MANAGE_BYPASS_IO
+    FS_BPIO_INPUT bpio_in{};
+    bpio_in.Operation = FS_BPIO_OP_QUERY;
+    bpio_in.InFlags = FSBPIO_INFL_None;
+
+    FS_BPIO_OUTPUT bpio_out{};
+    if (DeviceIoControl(
+            volume_handle,
+            FSCTL_MANAGE_BYPASS_IO,
+            &bpio_in,
+            sizeof(bpio_in),
+            &bpio_out,
+            sizeof(bpio_out),
+            &bytes_returned,
+            nullptr)) {
+        telemetry.bypass_io.is_supported = (bpio_out.Query.OpStatus == 0);
+        telemetry.bypass_io.status_code = bpio_out.Query.OpStatus;
+        telemetry.bypass_io.is_filter_blocked = (bpio_out.OutFlags & FSBPIO_OUTFL_FILTER_ATTACH_BLOCKED) != 0;
+        telemetry.bypass_io.is_storage_driver_compatible = (bpio_out.OutFlags & FSBPIO_OUTFL_COMPATIBLE_STORAGE_DRIVER) != 0;
+
+        if (bpio_out.Query.FailingDriverNameLen > 0) {
+            size_t len = (std::min)(static_cast<size_t>(bpio_out.Query.FailingDriverNameLen), size_t(32));
+            telemetry.bypass_io.failing_driver = std::wstring(bpio_out.Query.FailingDriverName, len);
+        }
+        if (bpio_out.Query.FailureReasonLen > 0) {
+            size_t len = (std::min)(static_cast<size_t>(bpio_out.Query.FailureReasonLen), size_t(128));
+            telemetry.bypass_io.failure_reason = std::wstring(bpio_out.Query.FailureReason, len);
+        }
+    } else {
+        DWORD err = GetLastError();
+        if (err == ERROR_INVALID_FUNCTION || err == ERROR_NOT_SUPPORTED) {
+            telemetry.bypass_io.failure_reason = L"BypassIO not supported on this Windows kernel (Windows 11 required)";
+        } else {
+            telemetry.bypass_io.status_code = err;
+        }
+    }
+#endif
+
     return telemetry;
 }
 

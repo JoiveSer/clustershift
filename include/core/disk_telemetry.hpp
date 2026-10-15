@@ -20,6 +20,16 @@ enum class BusTypeKind {
     Virtual
 };
 
+struct BypassIoTelemetry {
+    bool is_supported{false};
+    bool is_filter_blocked{false};
+    bool is_storage_driver_compatible{false};
+    DWORD status_code{0};
+    std::wstring failing_driver;
+    std::wstring failure_reason;
+    std::wstring storage_driver_name;
+};
+
 struct DiskHealthTelemetry {
     std::wstring vendor_id;
     std::wstring product_id;
@@ -27,6 +37,7 @@ struct DiskHealthTelemetry {
     BusTypeKind bus_type{BusTypeKind::Unknown};
     bool is_failure_predicted{false};
     int32_t temperature_celsius{-1};
+    BypassIoTelemetry bypass_io{};
 };
 
 class DiskTelemetry {

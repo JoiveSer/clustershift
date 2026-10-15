@@ -23,6 +23,19 @@ std::expected<ScopedHandle, DWORD> VolumeManager::open_volume(wchar_t drive_lett
         nullptr
     );
 
+    if (handle == INVALID_HANDLE_VALUE && !write_access && GetLastError() == ERROR_ACCESS_DENIED) {
+        // Non-elevated fallback: query device properties with 0 access mask
+        handle = CreateFileW(
+            volume_path.c_str(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            nullptr
+        );
+    }
+
     if (handle == INVALID_HANDLE_VALUE) {
         return std::unexpected(GetLastError());
     }
