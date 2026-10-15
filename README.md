@@ -32,13 +32,13 @@
 
 **ClusterShift** is a lightweight, zero-dependency, open-source storage utility engineered in modern C++20/C++23. It replaces multiple bulky, closed-source storage tools (defragmenters, disk speed testers, disk space analyzers) with a single, lightning-fast native binary (< 350 KB):
 
-* ⚡ **Unbuffered Storage Benchmark (`bench`):** Sector-aligned Direct I/O (`FILE_FLAG_NO_BUFFERING`) with **Queue Depth 32 (QD32)** asynchronous overlapped I/O, measuring true Sequential Read/Write throughput and Random 4KB IOPS without OS cache distortion.
-* 🔍 **High-Speed Multi-Core Space Scanner (`hogs`):** Parallel directory crawling across CPU cores using Win32 `FIND_FIRST_EX_LARGE_FETCH` to pinpoint top largest files, folder capacity hierarchy, and extension footprints in fractions of a second.
+* ⚡ **Unbuffered Storage Benchmark (`bench`):** Sector-aligned Direct I/O (`FILE_FLAG_NO_BUFFERING`) with **Queue Depth 32 (QD32)** asynchronous overlapped I/O and IOCP batch completion, measuring true Sequential Read/Write throughput and Random 4KB IOPS without OS cache distortion.
+* 🔍 **Adaptive Hybrid Space Scanner (`hogs`):** Hardware-aware dual engine — multi-core parallel crawling across CPU cores on NVMe/SSDs and single-thread sequential traversal on HDDs (`IncursSeekPenalty` guard) to avoid mechanical head thrashing.
 * 🛡️ **Dual-Engine SSD Protection & TRIM (`trim`):** Active hardware safety intercepts prevent damaging NAND wear. Dispatches instantaneous kernel TRIM (`DeviceDsmAction_Trim`) for peak flash write IOPS.
 * 💽 **Physics-Aware HDD Optimization (`optimize`):**
   * **Large Extent Filter (`--min-frag-size`):** Skips extents $\ge 50\text{ MB}$ where linear streaming transfer dominates mechanical seek latency, eliminating 70–90% of redundant head wear.
   * **ZBR (Zone-Bit Recording) Prioritization:** Relocates files into the lowest LCN ranges (outer platter cylinders) for maximum linear throughput (220–260 MB/s).
-  * **Background I/O Scheduling:** Lowers thread priority (`THREAD_PRIORITY_BELOW_NORMAL`) to eliminate system and gaming frame drops during maintenance.
+  * **Background I/O Scheduling:** Enters `THREAD_MODE_BACKGROUND_BEGIN` (`IoPriorityHintVeryLow`) to demote both CPU and storage I/O ring queues to the lowest background priority, preventing frame drops in games and apps.
 * 🕹️ **Interactive Retro-Modern Visualizer (`map`):** Real-time ANSI cluster allocation map rendering millions of NTFS volume clusters directly in your terminal.
 * 🚀 **Zero Friction:** Portable single executable. Double-click to launch the Interactive Menu, or integrate into the Windows Explorer right-click context menu in 1 click.
 
@@ -50,7 +50,7 @@
 | :--- | :---: | :---: | :---: | :---: |
 | **Open Source (MIT)** | ✅ **Yes** | ⚠️ Source restricted | ❌ Proprietary | ❌ Closed Source |
 | **Direct Hardware I/O Benchmark** | ✅ **Yes (QD32 Async I/O)**| ✅ Yes (QD32) | ❌ No | ❌ No |
-| **Fast Space-Hog Analyzer** | ✅ **Yes (Multi-Core Crawl)**| ❌ No | ✅ Yes ($MFT engine) | ❌ No |
+| **Fast Space-Hog Analyzer** | ✅ **Yes (Adaptive Dual-Engine)**| ❌ No | ✅ Yes ($MFT engine) | ❌ No |
 | **Dual-Engine SSD Wear Intercept**| ✅ **Hardware Guard** | ➖ N/A | ➖ N/A | ⚠️ Generic re-trim |
 | **ZBR Outer-Platter Optimization**| ✅ **Low-LCN Priority** | ❌ No | ❌ No | ❌ No |
 | **Large Fragment Skip Filter** | ✅ **Yes (--min-frag-size)**| ❌ No | ❌ No | ❌ Whole file blind |
@@ -98,7 +98,7 @@ Select an option (0-8):
 clustershift bench C
 clustershift bench C --quick
 
-# Parallel multi-core space scan for largest files, directories & extensions
+# Adaptive hybrid space scan (multi-core SSD / single-thread sequential HDD)
 clustershift hogs C:\
 clustershift hogs "D:\Games" --top 20
 
@@ -134,12 +134,12 @@ clustershift optimize "D:\VirtualMachine.vhdx" --dry-run
   Test Target:     Drive C:\ (Unbuffered Direct I/O)
   Sample Size:     1024 MB
 
-  Sequential Write (1MB):   3005.0 MB/s
-  Sequential Read  (1MB):   2746.6 MB/s
-  Random Read 4KB (QD32):    24762 IOPS (96.7 MB/s)
+  Sequential Write (1MB):   2852.7 MB/s
+  Sequential Read  (1MB):   2535.5 MB/s
+  Random Read 4KB (QD32):    98130 IOPS (383.3 MB/s)
 
-  Queue Depth:     32 (Overlapped Async I/O)
-  Total Duration:  4.29 seconds
+  Queue Depth:     32 (IOCP Async Batch Dequeuing)
+  Total Duration:  1.17 seconds
 +--------------------------------------------------------------+
 ```
 
@@ -239,7 +239,7 @@ cmake --build build --config Release
 - [x] Interactive console dashboard (Double-click support)
 - [x] 1-Click Windows Explorer context menu integration
 - [x] Disk I/O unbuffered throughput benchmark (Seq & QD32 Async 4K IOPS)
-- [x] Multi-core parallel space-hog analyzer
+- [x] Adaptive hybrid space scanner (multi-core SSD / single-thread sequential HDD)
 - [x] Physics-aware large fragment filter (`--min-frag-size`) & ZBR outer-cylinder placement
 - [x] Automated GitHub Actions CI/CD pipeline
 - [ ] Raw `$MFT` table direct parser engine for instant sub-0.1s volume cataloging
