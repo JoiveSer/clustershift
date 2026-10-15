@@ -6,6 +6,8 @@
 #include "core/trim_engine.hpp"
 #include "core/disk_telemetry.hpp"
 #include "core/shell_integration.hpp"
+#include "core/disk_benchmark.hpp"
+#include "core/space_hogs.hpp"
 #include "ui/ansi_visualizer.hpp"
 
 #include <iostream>
@@ -25,7 +27,7 @@ void print_banner() {
     std::wcout << L"\033[1;36m | |   | | | | / __| __/ _ \\ '__\\___ \\| '_ \\| | |_| __|\033[0m\n";
     std::wcout << L"\033[1;36m | |___| | |_| \\__ \\ ||  __/ |   ___) | | | | |  _| |_ \033[0m\n";
     std::wcout << L"\033[1;36m  \\____|_|\\__,_|___/\\__\\___|_|  |____/|_| |_|_|_|  \\__|\033[0m\n";
-    std::wcout << L"\033[1;35m  [ ARCHITECT & DEVELOPER: JOIVE ]\033[0m \033[90m- Universal Win32 Storage Optimizer v0.2\033[0m\n\n";
+    std::wcout << L"\033[1;35m  [ ARCHITECT & DEVELOPER: JOIVE ]\033[0m \033[90m- Universal Win32 Storage Optimizer v0.3\033[0m\n\n";
 }
 
 void print_usage() {
@@ -34,12 +36,36 @@ void print_usage() {
     std::wcout << L"\033[1;33mCommands:\033[0m\n";
     std::wcout << L"  \033[1;32minfo <drive>\033[0m                     Query volume geometry, media type & hardware bus\n";
     std::wcout << L"  \033[1;32mhealth <drive>\033[0m                   Check S.M.A.R.T. health, bus & thermal telemetry\n";
+    std::wcout << L"  \033[1;32mbench <drive> [--quick]\033[0m          Unbuffered storage benchmark (Sequential & 4K IOPS)\n";
+    std::wcout << L"  \033[1;32mhogs <path> [--top N]\033[0m            High-speed space-hog scanner (largest files & dirs)\n";
     std::wcout << L"  \033[1;32mmap <drive>\033[0m                      Render real-time ANSI cluster allocation map\n";
     std::wcout << L"  \033[1;32mscan <path> [--recursive]\033[0m        Analyze file fragmentation & cluster extents\n";
     std::wcout << L"  \033[1;32mtrim <drive>\033[0m                     Dispatch fast DSM/TRIM for SSD/NVMe flash maintenance\n";
     std::wcout << L"  \033[1;32moptimize <file> [--dry-run]\033[0m     Safely consolidate clusters (HDD only; --dry-run simulates)\n";
     std::wcout << L"  \033[1;32minstall-shell\033[0m                    Add Right-Click context menu to Windows Explorer\n";
     std::wcout << L"  \033[1;32muninstall-shell\033[0m                  Remove Explorer context menu integration\n\n";
+}
+
+std::wstring format_size_human(uint64_t bytes) {
+    const double gb = static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0);
+    if (gb >= 1.0) {
+        wchar_t buf[64];
+        swprintf_s(buf, L"%.2f GB", gb);
+        return buf;
+    }
+    const double mb = static_cast<double>(bytes) / (1024.0 * 1024.0);
+    if (mb >= 1.0) {
+        wchar_t buf[64];
+        swprintf_s(buf, L"%.1f MB", mb);
+        return buf;
+    }
+    const double kb = static_cast<double>(bytes) / 1024.0;
+    if (kb >= 1.0) {
+        wchar_t buf[64];
+        swprintf_s(buf, L"%.0f KB", kb);
+        return buf;
+    }
+    return std::to_wstring(bytes) + L" B";
 }
 
 std::vector<wchar_t> get_system_drives() {
@@ -131,6 +157,84 @@ void cmd_health(wchar_t drive_letter) {
     std::wcout << L"\n";
 }
 
+void cmd_bench(wchar_t drive_letter, bool quick_mode) {
+    const wchar_t upper = static_cast<wchar_t>(towupper(drive_letter));
+    std::wcout << L"[*] Initializing unbuffered storage benchmark on drive " << upper << L": ...\n";
+    std::wcout << L"    \033[90m-> Mode: " << (quick_mode ? L"Quick (64 MB)" : L"Standard (128 MB)") 
+               << L" | Direct I/O (Bypassing Windows OS File Cache)\033[0m\n\n";
+
+    auto res = clustershift::core::DiskBenchmark::run_benchmark(upper, 128 * 1024 * 1024, quick_mode);
+    if (!res.has_value()) {
+        std::wcout << L"\033[1;31m[-] Benchmark failed: \033[0m" 
+                   << clustershift::core::format_win32_error(res.error()) << L"\n";
+        return;
+    }
+
+    const auto& m = *res;
+    std::wcout << L"\033[1;37m+--------------------------------------------------------------+\033[0m\n";
+    std::wcout << L"\033[1;36m|          ClusterShift Hardware Storage Benchmark Results     |\033[0m\n";
+    std::wcout << L"\033[1;37m+--------------------------------------------------------------+\033[0m\n";
+    std::wcout << L"  Test Target:     Drive " << upper << L":\\ (Unbuffered Direct I/O)\n";
+    std::wcout << L"  Sample Size:     " << (m.test_file_size_bytes / (1024 * 1024)) << L" MB\n\n";
+
+    std::wcout << L"  \033[1;33mSequential Write (1MB):\033[0m  \033[1;32m" 
+               << std::fixed << std::setprecision(1) << std::setw(8) << m.seq_write_mbps << L" MB/s\033[0m\n";
+    std::wcout << L"  \033[1;33mSequential Read  (1MB):\033[0m  \033[1;32m" 
+               << std::fixed << std::setprecision(1) << std::setw(8) << m.seq_read_mbps << L" MB/s\033[0m\n";
+    std::wcout << L"  \033[1;33mRandom Read 4KB (IOPS):\033[0m  \033[1;36m" 
+               << std::fixed << std::setprecision(0) << std::setw(8) << m.rnd_4k_read_iops << L" IOPS\033[0m"
+               << L" \033[90m(" << std::fixed << std::setprecision(1) << m.rnd_4k_read_mbps << L" MB/s)\033[0m\n";
+    
+    std::wcout << L"\n  Total Duration:  " << std::fixed << std::setprecision(2) << m.duration_seconds << L" seconds\n";
+    std::wcout << L"\033[1;37m+--------------------------------------------------------------+\033[0m\n\n";
+}
+
+void cmd_hogs(const std::wstring& target_path, size_t top_count) {
+    std::wcout << L"[*] High-speed space scan on: " << target_path << L" ...\n";
+    auto res = clustershift::core::SpaceHogsScanner::scan(target_path, top_count);
+    if (!res.has_value()) {
+        std::wcout << L"\033[1;31m[-] Scan failed: \033[0m" 
+                   << clustershift::core::format_win32_error(res.error()) << L"\n";
+        return;
+    }
+
+    const auto& r = *res;
+    std::wcout << L"\n\033[1;37m=== Space-Hog Analysis: " << r.root_path << L" ===\033[0m\n";
+    std::wcout << L"  Scanned: " << r.total_files << L" files across " << r.total_directories 
+               << L" directories in \033[1;36m" << std::fixed << std::setprecision(2) << r.scan_duration_seconds << L"s\033[0m\n";
+    std::wcout << L"  Total Aggregate Size: \033[1;32m" << format_size_human(r.total_bytes) << L"\033[0m\n\n";
+
+    if (!r.top_files.empty()) {
+        std::wcout << L"\033[1;33m[ Top Largest Files ]\033[0m\n";
+        for (size_t i = 0; i < r.top_files.size(); ++i) {
+            std::wcout << L"  " << std::setw(2) << (i + 1) << L". [\033[1;31m" 
+                       << std::setw(10) << format_size_human(r.top_files[i].size_bytes) << L"\033[0m]  " 
+                       << r.top_files[i].path << L"\n";
+        }
+        std::wcout << L"\n";
+    }
+
+    if (!r.top_subfolders.empty()) {
+        std::wcout << L"\033[1;33m[ Top Subfolders by Capacity ]\033[0m\n";
+        for (size_t i = 0; i < r.top_subfolders.size(); ++i) {
+            std::wcout << L"  " << std::setw(2) << (i + 1) << L". [\033[1;35m" 
+                       << std::setw(10) << format_size_human(r.top_subfolders[i].size_bytes) << L"\033[0m]  " 
+                       << r.top_subfolders[i].path << L"\n";
+        }
+        std::wcout << L"\n";
+    }
+
+    if (!r.top_extensions.empty()) {
+        std::wcout << L"\033[1;33m[ Top Extensions by Footprint ]\033[0m\n";
+        for (const auto& ext : r.top_extensions) {
+            std::wcout << L"  " << std::setw(15) << ext.extension 
+                       << L" : \033[1;36m" << std::setw(10) << format_size_human(ext.total_bytes) << L"\033[0m"
+                       << L" \033[90m(" << ext.file_count << L" files)\033[0m\n";
+        }
+        std::wcout << L"\n";
+    }
+}
+
 void cmd_map(wchar_t drive_letter) {
     const wchar_t upper = static_cast<wchar_t>(towupper(drive_letter));
     auto volume = clustershift::core::VolumeManager::open_volume(upper, false);
@@ -208,8 +312,8 @@ void cmd_scan(const std::filesystem::path& target_path, bool recursive) {
             for (size_t i = 0; i < rep->extents.size() && i < 15; ++i) {
                 const auto& ext = rep->extents[i];
                 std::wcout << L"    [" << std::setw(3) << i << L"] VCN: " << std::setw(8) << ext.starting_vcn 
-                           << L" -> LCN: " << std::setw(10) << ext.target_lcn 
-                           << L" (" << ext.cluster_count << L" clusters)\n";
+                            << L" -> LCN: " << std::setw(10) << ext.target_lcn 
+                            << L" (" << ext.cluster_count << L" clusters)\n";
             }
             if (rep->extents.size() > 15) {
                 std::wcout << L"    ... (" << (rep->extents.size() - 15) << L" more fragments)\n";
@@ -357,10 +461,12 @@ void run_interactive_dashboard() {
         std::wcout << L"  \033[1;32m[2]\033[0m Render Real-Time Cluster Allocation Map\n";
         std::wcout << L"  \033[1;32m[3]\033[0m Dispatch Fast Flash TRIM (SSD/NVMe)\n";
         std::wcout << L"  \033[1;32m[4]\033[0m Scan Folder or Game for Fragmentation\n";
-        std::wcout << L"  \033[1;32m[5]\033[0m Add 1-Click Right-Click Context Menu to Windows Explorer\n";
-        std::wcout << L"  \033[1;32m[6]\033[0m Remove Explorer Context Menu\n";
+        std::wcout << L"  \033[1;32m[5]\033[0m Run Storage Benchmark (Sequential & 4K IOPS)\n";
+        std::wcout << L"  \033[1;32m[6]\033[0m Space-Hog Analyzer (Find Largest Files & Folders)\n";
+        std::wcout << L"  \033[1;32m[7]\033[0m Add 1-Click Right-Click Context Menu to Windows Explorer\n";
+        std::wcout << L"  \033[1;32m[8]\033[0m Remove Explorer Context Menu\n";
         std::wcout << L"  \033[1;31m[0] Exit\033[0m\n\n";
-        std::wcout << L"\033[1;37mSelect an option (0-6): \033[0m";
+        std::wcout << L"\033[1;37mSelect an option (0-8): \033[0m";
 
         std::wstring choice;
         if (!std::getline(std::wcin, choice)) {
@@ -402,8 +508,22 @@ void run_interactive_dashboard() {
                 cmd_scan(path, true);
             }
         } else if (choice == L"5") {
-            cmd_install_shell();
+            std::wcout << L"Enter drive letter to benchmark (e.g. C): ";
+            std::wstring d;
+            std::getline(std::wcin, d);
+            if (!d.empty()) {
+                cmd_bench(d[0], false);
+            }
         } else if (choice == L"6") {
+            std::wcout << L"Enter directory or drive root (e.g. C:\\ or D:\\Games): ";
+            std::wstring path;
+            std::getline(std::wcin, path);
+            if (!path.empty()) {
+                cmd_hogs(path, 15);
+            }
+        } else if (choice == L"7") {
+            cmd_install_shell();
+        } else if (choice == L"8") {
             cmd_uninstall_shell();
         }
 
@@ -443,6 +563,18 @@ int wmain(int argc, wchar_t* argv[]) {
         cmd_info(argv[2][0]);
     } else if (command == L"health" && argc >= 3) {
         cmd_health(argv[2][0]);
+    } else if (command == L"bench" && argc >= 3) {
+        bool quick = false;
+        if (argc >= 4 && std::wstring(argv[3]) == L"--quick") {
+            quick = true;
+        }
+        cmd_bench(argv[2][0], quick);
+    } else if (command == L"hogs" && argc >= 3) {
+        size_t top_n = 15;
+        if (argc >= 5 && std::wstring(argv[3]) == L"--top") {
+            top_n = std::stoull(argv[4]);
+        }
+        cmd_hogs(argv[2], top_n);
     } else if (command == L"map" && argc >= 3) {
         cmd_map(argv[2][0]);
     } else if (command == L"trim" && argc >= 3) {
