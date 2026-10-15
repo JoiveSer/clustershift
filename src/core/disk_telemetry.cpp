@@ -18,6 +18,19 @@ const wchar_t* DiskTelemetry::bus_type_to_string(BusTypeKind bus) noexcept {
     }
 }
 
+const char* DiskTelemetry::bus_type_to_string_a(BusTypeKind bus) noexcept {
+    switch (bus) {
+        case BusTypeKind::Nvme:    return "NVMe (PCIe Express)";
+        case BusTypeKind::Sata:    return "Serial ATA (SATA)";
+        case BusTypeKind::Usb:     return "USB Removable";
+        case BusTypeKind::Sas:     return "Serial Attached SCSI (SAS)";
+        case BusTypeKind::Scsi:    return "SCSI";
+        case BusTypeKind::Ata:     return "Parallel ATA (IDE)";
+        case BusTypeKind::Virtual: return "Virtual / VHD";
+        default:                   return "Standard Storage Bus";
+    }
+}
+
 namespace {
 BusTypeKind map_bus_type(STORAGE_BUS_TYPE type) noexcept {
     switch (type) {

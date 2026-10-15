@@ -44,6 +44,7 @@ class DiskTelemetry {
 public:
     static std::expected<DiskHealthTelemetry, DWORD> query_telemetry(HANDLE volume_handle);
     static const wchar_t* bus_type_to_string(BusTypeKind bus) noexcept;
+    static const char* bus_type_to_string_a(BusTypeKind bus) noexcept;
 };
 
 } // namespace clustershift::core
