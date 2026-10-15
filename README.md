@@ -6,7 +6,7 @@
 *Storage Optimization • Unbuffered Hardware Benchmarking • Space-Hog Analysis • Dual-Engine Maintenance*
 
 [![CI Build](https://github.com/JoiveSer/clustershift/actions/workflows/ci.yml/badge.svg)](https://github.com/JoiveSer/clustershift/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-v0.3.0-emerald)](https://github.com/JoiveSer/clustershift/releases)
+[![Version](https://img.shields.io/badge/version-v0.4.0-emerald)](https://github.com/JoiveSer/clustershift/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue)](https://github.com/JoiveSer/clustershift)
 [![C++](https://img.shields.io/badge/C%2B%2B-20%20%2F%2023-purple)](https://github.com/JoiveSer/clustershift)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -22,7 +22,7 @@
   \____|_|\__,_|___/\__\___|_|  |____/|_| |_|_|_|  \__|
 ```
 
-**[ 📥 Download Latest Release (v0.3.0) ](https://github.com/JoiveSer/clustershift/releases/latest)**
+**[ 📥 Download Latest Release (v0.4.0) ](https://github.com/JoiveSer/clustershift/releases/latest)**
 
 </div>
 

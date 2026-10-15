@@ -27,7 +27,7 @@ void print_banner() {
     std::wcout << L"\033[1;36m | |   | | | | / __| __/ _ \\ '__\\___ \\| '_ \\| | |_| __|\033[0m\n";
     std::wcout << L"\033[1;36m | |___| | |_| \\__ \\ ||  __/ |   ___) | | | | |  _| |_ \033[0m\n";
     std::wcout << L"\033[1;36m  \\____|_|\\__,_|___/\\__\\___|_|  |____/|_| |_|_|_|  \\__|\033[0m\n";
-    std::wcout << L"\033[1;35m  [ ARCHITECT & DEVELOPER: JOIVE ]\033[0m \033[90m- Universal Win32 Storage Optimizer v0.3\033[0m\n\n";
+    std::wcout << L"\033[1;35m  [ ARCHITECT & DEVELOPER: JOIVE ]\033[0m \033[90m- Universal Win32 Storage Optimizer v0.4\033[0m\n\n";
 }
 
 void print_usage() {

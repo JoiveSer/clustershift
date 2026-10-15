@@ -1,7 +1,7 @@
 @echo off
 setlocal
 echo ========================================================
-echo   ClusterShift v0.3 - 1-Click Release Packager
+echo   ClusterShift v0.4 - 1-Click Release Packager
 echo   Architect: Joive
 echo ========================================================
 
@@ -14,7 +14,7 @@ if not exist "clustershift.exe" (
     del *.obj
 )
 
-set DIST_DIR=dist\ClusterShift-v0.3-by-Joive
+set DIST_DIR=dist\ClusterShift-v0.4-by-Joive
 if exist "dist" rd /s /q "dist"
 mkdir "%DIST_DIR%"
 
@@ -23,10 +23,10 @@ copy "clustershift.exe" "%DIST_DIR%\"
 copy "README.md" "%DIST_DIR%\"
 copy "LICENSE" "%DIST_DIR%\"
 
-powershell -Command "Compress-Archive -Path '%DIST_DIR%' -DestinationPath 'ClusterShift-v0.3-by-Joive.zip' -Force"
+powershell -Command "Compress-Archive -Path '%DIST_DIR%' -DestinationPath 'ClusterShift-v0.4-by-Joive.zip' -Force"
 
 echo.
 echo [+] Release package created successfully:
-echo     ClusterShift-v0.3-by-Joive.zip
+echo     ClusterShift-v0.4-by-Joive.zip
 echo.
 echo [+] Ready for GitHub Releases upload!
