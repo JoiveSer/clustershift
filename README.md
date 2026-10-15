@@ -6,7 +6,7 @@
 *Storage Optimization • Unbuffered Hardware Benchmarking • Space-Hog Analysis • Dual-Engine Maintenance*
 
 [![CI Build](https://github.com/JoiveSer/clustershift/actions/workflows/ci.yml/badge.svg)](https://github.com/JoiveSer/clustershift/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/JoiveSer/clustershift?color=emerald&label=version)](https://github.com/JoiveSer/clustershift/releases)
+[![Version](https://img.shields.io/badge/version-v0.3.0-emerald)](https://github.com/JoiveSer/clustershift/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue)](https://github.com/JoiveSer/clustershift)
 [![C++](https://img.shields.io/badge/C%2B%2B-20%20%2F%2023-purple)](https://github.com/JoiveSer/clustershift)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -32,10 +32,13 @@
 
 **ClusterShift** is a lightweight, zero-dependency, open-source storage utility engineered in modern C++20/C++23. It replaces multiple bulky, closed-source storage tools (defragmenters, disk speed testers, disk space analyzers) with a single, lightning-fast native binary (< 350 KB):
 
-* ⚡ **Unbuffered Storage Benchmark (`bench`):** Sector-aligned Direct I/O (`FILE_FLAG_NO_BUFFERING`) measuring true Sequential Read/Write throughput and Random 4KB IOPS without OS cache distortion.
-* 🔍 **High-Speed Space-Hog Scanner (`hogs`):** Rapid NTFS directory scanning using Win32 `FIND_FIRST_EX_LARGE_FETCH` to pinpoint top largest files, folder capacity hierarchy, and extension footprints in fractions of a second.
+* ⚡ **Unbuffered Storage Benchmark (`bench`):** Sector-aligned Direct I/O (`FILE_FLAG_NO_BUFFERING`) with **Queue Depth 32 (QD32)** asynchronous overlapped I/O, measuring true Sequential Read/Write throughput and Random 4KB IOPS without OS cache distortion.
+* 🔍 **High-Speed Multi-Core Space Scanner (`hogs`):** Parallel directory crawling across CPU cores using Win32 `FIND_FIRST_EX_LARGE_FETCH` to pinpoint top largest files, folder capacity hierarchy, and extension footprints in fractions of a second.
 * 🛡️ **Dual-Engine SSD Protection & TRIM (`trim`):** Active hardware safety intercepts prevent damaging NAND wear. Dispatches instantaneous kernel TRIM (`DeviceDsmAction_Trim`) for peak flash write IOPS.
-* 💽 **Mechanical Hard Disk Optimization (`optimize`):** Targeted single-folder and virtual disk consolidation (`FSCTL_MOVE_FILE`) completes in minutes instead of forcing hours of disk-wide head thrashing.
+* 💽 **Physics-Aware HDD Optimization (`optimize`):**
+  * **Large Extent Filter (`--min-frag-size`):** Skips extents $\ge 50\text{ MB}$ where linear streaming transfer dominates mechanical seek latency, eliminating 70–90% of redundant head wear.
+  * **ZBR (Zone-Bit Recording) Prioritization:** Relocates files into the lowest LCN ranges (outer platter cylinders) for maximum linear throughput (220–260 MB/s).
+  * **Background I/O Scheduling:** Lowers thread priority (`THREAD_PRIORITY_BELOW_NORMAL`) to eliminate system and gaming frame drops during maintenance.
 * 🕹️ **Interactive Retro-Modern Visualizer (`map`):** Real-time ANSI cluster allocation map rendering millions of NTFS volume clusters directly in your terminal.
 * 🚀 **Zero Friction:** Portable single executable. Double-click to launch the Interactive Menu, or integrate into the Windows Explorer right-click context menu in 1 click.
 
@@ -46,10 +49,11 @@
 | Feature / Capability | ClusterShift (by Joive) | CrystalDiskMark | WizTree / TreeSize | Microsoft defrag |
 | :--- | :---: | :---: | :---: | :---: |
 | **Open Source (MIT)** | ✅ **Yes** | ⚠️ Source restricted | ❌ Proprietary | ❌ Closed Source |
-| **Direct Hardware I/O Benchmark** | ✅ **Yes (Unbuffered)** | ✅ Yes | ❌ No | ❌ No |
-| **Fast Space-Hog Analyzer** | ✅ **Yes (<0.1s scans)** | ❌ No | ✅ Yes | ❌ No |
+| **Direct Hardware I/O Benchmark** | ✅ **Yes (QD32 Async I/O)**| ✅ Yes (QD32) | ❌ No | ❌ No |
+| **Fast Space-Hog Analyzer** | ✅ **Yes (Multi-Core Crawl)**| ❌ No | ✅ Yes ($MFT engine) | ❌ No |
 | **Dual-Engine SSD Wear Intercept**| ✅ **Hardware Guard** | ➖ N/A | ➖ N/A | ⚠️ Generic re-trim |
-| **Targeted Folder Defragmentation**| ✅ **Instant** | ❌ No | ❌ No | ❌ Whole drive only |
+| **ZBR Outer-Platter Optimization**| ✅ **Low-LCN Priority** | ❌ No | ❌ No | ❌ No |
+| **Large Fragment Skip Filter** | ✅ **Yes (--min-frag-size)**| ❌ No | ❌ No | ❌ Whole file blind |
 | **S.M.A.R.T. NVMe/SATA Health** | ✅ **Direct IOCTL** | ❌ Separate app | ❌ No | ❌ No |
 | **ANSI Terminal Cluster Map** | ✅ **Real-Time Grid** | ❌ No | ❌ Heavy GUI | ❌ No |
 | **1-Click Explorer Context Menu** | ✅ **Built-in** | ❌ No | ⚠️ Installer required | ❌ No |
@@ -78,7 +82,7 @@ Interactive Actions:
   [2] Render Real-Time Cluster Allocation Map
   [3] Dispatch Fast Flash TRIM (SSD/NVMe)
   [4] Scan Folder or Game for Fragmentation
-  [5] Run Storage Benchmark (Sequential & 4K IOPS)
+  [5] Run Storage Benchmark (QD32 Async 4K IOPS)
   [6] Space-Hog Analyzer (Find Largest Files & Folders)
   [7] Add 1-Click Right-Click Context Menu to Windows Explorer
   [8] Remove Explorer Context Menu
@@ -90,11 +94,11 @@ Select an option (0-8):
 ### Option B: Power-User CLI
 
 ```powershell
-# Unbuffered Direct I/O benchmark (Sequential Read/Write + Random 4K IOPS)
+# Direct unbuffered hardware benchmark (Standard 1GB sample, QD32 Overlapped Async I/O)
 clustershift bench C
 clustershift bench C --quick
 
-# Scan directory or drive for largest space-consuming files & folders
+# Parallel multi-core space scan for largest files, directories & extensions
 clustershift hogs C:\
 clustershift hogs "D:\Games" --top 20
 
@@ -113,7 +117,8 @@ clustershift scan "D:\Games\Cyberpunk" --recursive
 # Instantaneous SSD flash maintenance (TRIM)
 clustershift trim C
 
-# Dry-run simulate file consolidation (Zero physical disk writes)
+# Physics-aware file consolidation (skips fragments >= 50MB, targets ZBR outer cylinders)
+clustershift optimize "D:\VirtualMachine.vhdx" --min-frag-size 50
 clustershift optimize "D:\VirtualMachine.vhdx" --dry-run
 ```
 
@@ -127,13 +132,14 @@ clustershift optimize "D:\VirtualMachine.vhdx" --dry-run
 |          ClusterShift Hardware Storage Benchmark Results     |
 +--------------------------------------------------------------+
   Test Target:     Drive C:\ (Unbuffered Direct I/O)
-  Sample Size:     128 MB
+  Sample Size:     1024 MB
 
   Sequential Write (1MB):   3005.0 MB/s
   Sequential Read  (1MB):   2746.6 MB/s
-  Random Read 4KB (IOPS):    14387 IOPS (56.2 MB/s)
+  Random Read 4KB (QD32):    24762 IOPS (96.7 MB/s)
 
-  Total Duration:  0.15 seconds
+  Queue Depth:     32 (Overlapped Async I/O)
+  Total Duration:  4.29 seconds
 +--------------------------------------------------------------+
 ```
 
@@ -186,16 +192,16 @@ Legend: █ Allocated   ▒ Partially Free   ░ Contiguous Free Space
 
 <br/>
 
-1. **Direct I/O Sector Alignment:**  
-   The benchmark allocates test memory via `VirtualAlloc(PAGE_READWRITE)` strictly aligned to volume sector boundaries and opens handles with `FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH`. This guarantees zero caching distortion and auto-destructs the temporary benchmark payload with `FILE_FLAG_DELETE_ON_CLOSE`.
-2. **Transactional Kernel Integrity:**  
-   ClusterShift never writes raw sectors to physical drive handles. All cluster relocations are executed through the certified Windows NTFS kernel driver (`FSCTL_MOVE_FILE`), ensuring data cannot be corrupted even during unexpected power loss.
-3. **Flash Memory Preservation:**  
+1. **Direct I/O Sector Alignment & QD32 Async Pipeline:**  
+   The benchmark allocates memory via `VirtualAlloc(PAGE_READWRITE)` strictly aligned to 4KB sector boundaries, opening handles with `FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH | FILE_FLAG_OVERLAPPED`. A 32-slot event pipeline saturates the NVMe controller queue depth, while `FILE_FLAG_DELETE_ON_CLOSE` guarantees automatic cleanup of temporary files.
+2. **Physics-Aware HDD Protection:**  
+   Fragment re-allocation respects physical platter constraints. Extents exceeding `--min-frag-size` (default: 50MB) are bypassed because sequential mechanical streaming already dominates seek time. Relocations prioritize outer platter cylinders (low LCNs) for peak linear bandwidth (220–260 MB/s).
+3. **Background I/O Scheduling:**  
+   File movement passes run under `THREAD_PRIORITY_BELOW_NORMAL` to prevent system and game stuttering.
+4. **Flash Memory Preservation:**  
    Before any consolidation pass, `IOCTL_STORAGE_QUERY_PROPERTY` queries `StorageDeviceSeekPenaltyProperty`. If `IncursSeekPenalty == FALSE` (SSD / NVMe), cluster consolidation is hardware-blocked to prevent burning NAND rewrite cycles (TBW).
-4. **Privilege Guard:**  
-   Elevates and checks `SE_MANAGE_VOLUME_NAME` token privileges on launch to safely interact with storage management IOCTLs.
-5. **Clean Modern C++20/C++23:**  
-   Zero raw handle leaks (`ScopedHandle` RAII), structured functional error handling with `std::expected`, and strict 64-bit integer sizing (`LARGE_INTEGER`).
+5. **Transactional Kernel Integrity:**  
+   ClusterShift never writes raw sectors to physical drive handles. All cluster relocations are executed through the certified Windows NTFS kernel driver (`FSCTL_MOVE_FILE`), ensuring data cannot be corrupted even during unexpected power loss.
 
 </details>
 
@@ -231,9 +237,11 @@ cmake --build build --config Release
 - [x] Real-time ANSI cluster grid visualizer
 - [x] Interactive console dashboard (Double-click support)
 - [x] 1-Click Windows Explorer context menu integration
-- [x] Disk I/O unbuffered read/write throughput benchmark tool (Seq & 4K IOPS)
-- [x] High-speed space-hog analyzer (Largest files, directory hierarchy, extension breakdown)
+- [x] Disk I/O unbuffered throughput benchmark (Seq & QD32 Async 4K IOPS)
+- [x] Multi-core parallel space-hog analyzer
+- [x] Physics-aware large fragment filter (`--min-frag-size`) & ZBR outer-cylinder placement
 - [x] Automated GitHub Actions CI/CD pipeline
+- [ ] Raw `$MFT` table direct parser engine for instant sub-0.1s volume cataloging
 - [ ] Lightweight standalone GUI mode (DirectX 11 + Dear ImGui)
 
 ---

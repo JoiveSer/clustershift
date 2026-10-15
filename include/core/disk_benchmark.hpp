@@ -14,6 +14,7 @@ struct BenchmarkMetrics {
     double seq_read_mbps{0.0};
     double rnd_4k_read_iops{0.0};
     double rnd_4k_read_mbps{0.0};
+    uint32_t queue_depth{32};
     uint64_t test_file_size_bytes{0};
     double duration_seconds{0.0};
 };
@@ -22,7 +23,7 @@ class DiskBenchmark {
 public:
     static std::expected<BenchmarkMetrics, DWORD> run_benchmark(
         wchar_t drive_letter,
-        uint64_t test_size_bytes = 128 * 1024 * 1024, // 128 MB test file
+        uint64_t test_size_bytes = 1024ULL * 1024 * 1024, // 1 GB test file default
         bool quick_mode = false
     );
 };

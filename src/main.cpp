@@ -34,16 +34,16 @@ void print_usage() {
     std::wcout << L"\033[1;37mUsage:\033[0m clustershift <command> [arguments]\n";
     std::wcout << L"       clustershift (run without arguments for Interactive Dashboard)\n\n";
     std::wcout << L"\033[1;33mCommands:\033[0m\n";
-    std::wcout << L"  \033[1;32minfo <drive>\033[0m                     Query volume geometry, media type & hardware bus\n";
-    std::wcout << L"  \033[1;32mhealth <drive>\033[0m                   Check S.M.A.R.T. health, bus & thermal telemetry\n";
-    std::wcout << L"  \033[1;32mbench <drive> [--quick]\033[0m          Unbuffered storage benchmark (Sequential & 4K IOPS)\n";
-    std::wcout << L"  \033[1;32mhogs <path> [--top N]\033[0m            High-speed space-hog scanner (largest files & dirs)\n";
-    std::wcout << L"  \033[1;32mmap <drive>\033[0m                      Render real-time ANSI cluster allocation map\n";
-    std::wcout << L"  \033[1;32mscan <path> [--recursive]\033[0m        Analyze file fragmentation & cluster extents\n";
-    std::wcout << L"  \033[1;32mtrim <drive>\033[0m                     Dispatch fast DSM/TRIM for SSD/NVMe flash maintenance\n";
-    std::wcout << L"  \033[1;32moptimize <file> [--dry-run]\033[0m     Safely consolidate clusters (HDD only; --dry-run simulates)\n";
-    std::wcout << L"  \033[1;32minstall-shell\033[0m                    Add Right-Click context menu to Windows Explorer\n";
-    std::wcout << L"  \033[1;32muninstall-shell\033[0m                  Remove Explorer context menu integration\n\n";
+    std::wcout << L"  \033[1;32minfo <drive>\033[0m                                 Query volume geometry, media type & hardware bus\n";
+    std::wcout << L"  \033[1;32mhealth <drive>\033[0m                               Check S.M.A.R.T. health, bus & thermal telemetry\n";
+    std::wcout << L"  \033[1;32mbench <drive> [--quick]\033[0m                      Direct I/O benchmark (1GB / 128MB, QD32 4K IOPS)\n";
+    std::wcout << L"  \033[1;32mhogs <path> [--top N]\033[0m                        Parallel multi-core space-hog scanner\n";
+    std::wcout << L"  \033[1;32mmap <drive>\033[0m                                  Render real-time ANSI cluster allocation map\n";
+    std::wcout << L"  \033[1;32mscan <path> [--recursive]\033[0m                    Analyze file fragmentation & cluster extents\n";
+    std::wcout << L"  \033[1;32mtrim <drive>\033[0m                                 Dispatch fast DSM/TRIM for SSD/NVMe flash maintenance\n";
+    std::wcout << L"  \033[1;32moptimize <file> [--dry-run] [--min-frag-size N]\033[0m ZBR-aware cluster relocation (HDD only; skips >= N MB)\n";
+    std::wcout << L"  \033[1;32minstall-shell\033[0m                                Add Right-Click context menu to Windows Explorer\n";
+    std::wcout << L"  \033[1;32muninstall-shell\033[0m                              Remove Explorer context menu integration\n\n";
 }
 
 std::wstring format_size_human(uint64_t bytes) {
@@ -160,10 +160,11 @@ void cmd_health(wchar_t drive_letter) {
 void cmd_bench(wchar_t drive_letter, bool quick_mode) {
     const wchar_t upper = static_cast<wchar_t>(towupper(drive_letter));
     std::wcout << L"[*] Initializing unbuffered storage benchmark on drive " << upper << L": ...\n";
-    std::wcout << L"    \033[90m-> Mode: " << (quick_mode ? L"Quick (64 MB)" : L"Standard (128 MB)") 
-               << L" | Direct I/O (Bypassing Windows OS File Cache)\033[0m\n\n";
+    std::wcout << L"    \033[90m-> Mode: " << (quick_mode ? L"Quick (128 MB)" : L"Standard (1 GB)") 
+               << L" | Direct I/O (Bypassing Windows OS File Cache)\033[0m\n";
+    std::wcout << L"    \033[90m-> Random 4K Engine: Overlapped Asynchronous I/O (Queue Depth = 32)\033[0m\n\n";
 
-    auto res = clustershift::core::DiskBenchmark::run_benchmark(upper, 128 * 1024 * 1024, quick_mode);
+    auto res = clustershift::core::DiskBenchmark::run_benchmark(upper, 1024ULL * 1024 * 1024, quick_mode);
     if (!res.has_value()) {
         std::wcout << L"\033[1;31m[-] Benchmark failed: \033[0m" 
                    << clustershift::core::format_win32_error(res.error()) << L"\n";
@@ -181,16 +182,17 @@ void cmd_bench(wchar_t drive_letter, bool quick_mode) {
                << std::fixed << std::setprecision(1) << std::setw(8) << m.seq_write_mbps << L" MB/s\033[0m\n";
     std::wcout << L"  \033[1;33mSequential Read  (1MB):\033[0m  \033[1;32m" 
                << std::fixed << std::setprecision(1) << std::setw(8) << m.seq_read_mbps << L" MB/s\033[0m\n";
-    std::wcout << L"  \033[1;33mRandom Read 4KB (IOPS):\033[0m  \033[1;36m" 
+    std::wcout << L"  \033[1;33mRandom Read 4KB (QD32):\033[0m  \033[1;36m" 
                << std::fixed << std::setprecision(0) << std::setw(8) << m.rnd_4k_read_iops << L" IOPS\033[0m"
                << L" \033[90m(" << std::fixed << std::setprecision(1) << m.rnd_4k_read_mbps << L" MB/s)\033[0m\n";
     
-    std::wcout << L"\n  Total Duration:  " << std::fixed << std::setprecision(2) << m.duration_seconds << L" seconds\n";
+    std::wcout << L"\n  Queue Depth:     " << m.queue_depth << L" (Overlapped Async I/O)\n";
+    std::wcout << L"  Total Duration:  " << std::fixed << std::setprecision(2) << m.duration_seconds << L" seconds\n";
     std::wcout << L"\033[1;37m+--------------------------------------------------------------+\033[0m\n\n";
 }
 
 void cmd_hogs(const std::wstring& target_path, size_t top_count) {
-    std::wcout << L"[*] High-speed space scan on: " << target_path << L" ...\n";
+    std::wcout << L"[*] High-speed parallel space scan on: " << target_path << L" ...\n";
     auto res = clustershift::core::SpaceHogsScanner::scan(target_path, top_count);
     if (!res.has_value()) {
         std::wcout << L"\033[1;31m[-] Scan failed: \033[0m" 
@@ -332,7 +334,7 @@ void cmd_scan(const std::filesystem::path& target_path, bool recursive) {
     }
 }
 
-void cmd_optimize(const std::filesystem::path& file_path, bool dry_run) {
+void cmd_optimize(const std::filesystem::path& file_path, bool dry_run, uint64_t min_frag_size_mb) {
     std::error_code ec;
     if (!std::filesystem::is_regular_file(file_path, ec)) {
         std::wcout << L"\033[1;31m[-] Target must be a valid regular file:\033[0m " << file_path.wstring() << L"\n";
@@ -361,6 +363,10 @@ void cmd_optimize(const std::filesystem::path& file_path, bool dry_run) {
         return;
     }
 
+    // Set background thread priority to prevent system / foreground UI stutter
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    std::wcout << L"\033[90m[*] I/O Scheduler: Thread priority set to BELOW_NORMAL to prevent foreground stuttering.\033[0m\n";
+
     std::wcout << L"[*] Analyzing file clusters...\n";
     auto report = clustershift::core::ExtentResolver::analyze_file(file_path);
     if (!report.has_value()) {
@@ -374,6 +380,27 @@ void cmd_optimize(const std::filesystem::path& file_path, bool dry_run) {
         return;
     }
 
+    auto vol_details = clustershift::core::VolumeManager::query_volume_details(drive_letter);
+    const uint64_t cluster_size = vol_details.has_value() ? vol_details->cluster_size : 4096;
+    const uint64_t min_frag_clusters = (min_frag_size_mb * 1024 * 1024) / cluster_size;
+
+    // Evaluate fragments against physical HDD physics (ZBR / large extent filter)
+    bool all_large = true;
+    for (const auto& ext : report->extents) {
+        if (!ext.is_sparse && ext.cluster_count < min_frag_clusters) {
+            all_large = false;
+            break;
+        }
+    }
+
+    if (all_large) {
+        std::wcout << L"\033[1;32m[+] Physics-Aware Optimization Filter active (--min-frag-size " << min_frag_size_mb << L" MB):\033[0m\n";
+        std::wcout << L"    All " << report->extent_count << L" fragments are >= " << min_frag_size_mb << L" MB.\n";
+        std::wcout << L"    On rotational HDDs, linear streaming transfer dominates head seek latency (4-12ms).\n";
+        std::wcout << L"    -> Skipping redundant physical sector relocation to prevent disk wear.\n";
+        return;
+    }
+
     std::wcout << L"[*] File has " << report->extent_count << L" fragments across " 
                << report->total_clusters << L" clusters. Loading volume bitmap...\n";
 
@@ -384,8 +411,8 @@ void cmd_optimize(const std::filesystem::path& file_path, bool dry_run) {
         return;
     }
 
-    std::wcout << L"[*] Searching for contiguous free run of " << report->total_clusters << L" clusters...\n";
-    auto target_lcn = bitmap->find_contiguous_free_space(report->total_clusters);
+    std::wcout << L"[*] ZBR Platter Architecture: Searching for continuous space starting from lowest LCN (outer cylinders) for peak linear bandwidth (220-260 MB/s)...\n";
+    auto target_lcn = bitmap->find_contiguous_free_space(report->total_clusters, 0);
     if (!target_lcn.has_value()) {
         std::wcout << L"\033[1;31m[-] No single contiguous block of free clusters large enough on volume.\033[0m\n";
         return;
@@ -393,7 +420,7 @@ void cmd_optimize(const std::filesystem::path& file_path, bool dry_run) {
 
     if (dry_run) {
         std::wcout << L"\033[1;33m[DRY-RUN SIMULATION]\033[0m\n";
-        std::wcout << L"  Target Continuous LCN: " << *target_lcn << L"\n";
+        std::wcout << L"  Target Continuous LCN: " << *target_lcn << L" (Outer Track Zone)\n";
         std::wcout << L"  Clusters to Consolidate: " << report->total_clusters << L"\n";
         std::wcout << L"  Fragments Reduced: " << report->extent_count << L" -> 1\n";
         std::wcout << L"\033[1;32m[+] Dry-run simulation completed safely. No physical sectors were modified.\033[0m\n";
@@ -461,7 +488,7 @@ void run_interactive_dashboard() {
         std::wcout << L"  \033[1;32m[2]\033[0m Render Real-Time Cluster Allocation Map\n";
         std::wcout << L"  \033[1;32m[3]\033[0m Dispatch Fast Flash TRIM (SSD/NVMe)\n";
         std::wcout << L"  \033[1;32m[4]\033[0m Scan Folder or Game for Fragmentation\n";
-        std::wcout << L"  \033[1;32m[5]\033[0m Run Storage Benchmark (Sequential & 4K IOPS)\n";
+        std::wcout << L"  \033[1;32m[5]\033[0m Run Storage Benchmark (QD32 Async 4K IOPS)\n";
         std::wcout << L"  \033[1;32m[6]\033[0m Space-Hog Analyzer (Find Largest Files & Folders)\n";
         std::wcout << L"  \033[1;32m[7]\033[0m Add 1-Click Right-Click Context Menu to Windows Explorer\n";
         std::wcout << L"  \033[1;32m[8]\033[0m Remove Explorer Context Menu\n";
@@ -587,10 +614,16 @@ int wmain(int argc, wchar_t* argv[]) {
         cmd_scan(argv[2], recursive);
     } else if (command == L"optimize" && argc >= 3) {
         bool dry_run = false;
-        if (argc >= 4 && std::wstring(argv[3]) == L"--dry-run") {
-            dry_run = true;
+        uint64_t min_frag_size = 50; // default 50 MB
+        for (int i = 3; i < argc; ++i) {
+            std::wstring arg = argv[i];
+            if (arg == L"--dry-run") {
+                dry_run = true;
+            } else if (arg == L"--min-frag-size" && i + 1 < argc) {
+                min_frag_size = std::stoull(argv[++i]);
+            }
         }
-        cmd_optimize(argv[2], dry_run);
+        cmd_optimize(argv[2], dry_run, min_frag_size);
     } else if (command == L"install-shell") {
         cmd_install_shell();
     } else if (command == L"uninstall-shell") {

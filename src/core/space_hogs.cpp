@@ -4,6 +4,9 @@
 #include <unordered_map>
 #include <algorithm>
 #include <cwctype>
+#include <thread>
+#include <mutex>
+#include <vector>
 
 namespace clustershift::core {
 
@@ -36,6 +39,91 @@ std::wstring get_extension_lower(const std::wstring& filename) {
     return ext;
 }
 
+struct ThreadScanResult {
+    uint64_t files{0};
+    uint64_t directories{0};
+    uint64_t bytes{0};
+    std::priority_queue<FileEntry, std::vector<FileEntry>, CompareFileMin> min_heap;
+    std::unordered_map<std::wstring, ExtensionStats> ext_map;
+    std::unordered_map<std::wstring, uint64_t> subfolder_sizes;
+};
+
+void scan_subtree(
+    std::wstring start_dir,
+    std::wstring top_subfolder_name,
+    size_t top_count,
+    ThreadScanResult& out
+) {
+    std::vector<std::wstring> stack;
+    stack.push_back(std::move(start_dir));
+
+    while (!stack.empty()) {
+        std::wstring current = std::move(stack.back());
+        stack.pop_back();
+
+        out.directories++;
+
+        std::wstring pattern = current + L"*";
+        WIN32_FIND_DATAW fd;
+        HANDLE h_find = FindFirstFileExW(
+            pattern.c_str(),
+            FindExInfoBasic,
+            &fd,
+            FindExSearchNameMatch,
+            nullptr,
+            FIND_FIRST_EX_LARGE_FETCH
+        );
+
+        if (h_find == INVALID_HANDLE_VALUE) {
+            continue;
+        }
+
+        do {
+            const wchar_t* name = fd.cFileName;
+            if (name[0] == L'.') {
+                if (name[1] == L'\0' || (name[1] == L'.' && name[2] == L'\0')) {
+                    continue;
+                }
+            }
+
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+                continue; // Skip junction loops & symlinks
+            }
+
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                stack.push_back(current + name + L"\\");
+            } else {
+                ULARGE_INTEGER sz;
+                sz.LowPart = fd.nFileSizeLow;
+                sz.HighPart = fd.nFileSizeHigh;
+                const uint64_t b = sz.QuadPart;
+
+                out.files++;
+                out.bytes += b;
+
+                if (!top_subfolder_name.empty()) {
+                    out.subfolder_sizes[top_subfolder_name] += b;
+                }
+
+                std::wstring ext = get_extension_lower(name);
+                auto& stat = out.ext_map[ext];
+                stat.extension = ext;
+                stat.total_bytes += b;
+                stat.file_count++;
+
+                if (out.min_heap.size() < top_count) {
+                    out.min_heap.push(FileEntry{current + name, b});
+                } else if (!out.min_heap.empty() && b > out.min_heap.top().size_bytes) {
+                    out.min_heap.pop();
+                    out.min_heap.push(FileEntry{current + name, b});
+                }
+            }
+        } while (FindNextFileW(h_find, &fd));
+
+        FindClose(h_find);
+    }
+}
+
 } // namespace
 
 std::expected<SpaceHogsReport, DWORD> SpaceHogsScanner::scan(
@@ -54,14 +142,7 @@ std::expected<SpaceHogsReport, DWORD> SpaceHogsScanner::scan(
     SpaceHogsReport report{};
     report.root_path = root;
 
-    std::priority_queue<FileEntry, std::vector<FileEntry>, CompareFileMin> min_heap;
-    std::unordered_map<std::wstring, ExtensionStats> ext_map;
-    std::unordered_map<std::wstring, uint64_t> subfolder_sizes;
-
-    // Stack holds pair: {directory_path, immediate_subfolder_name}
-    std::vector<std::pair<std::wstring, std::wstring>> dir_stack;
-
-    // Verify root accessibility
+    // First, verify access and discover immediate subdirectories at root
     std::wstring initial_pattern = root + L"*";
     WIN32_FIND_DATAW fd;
     HANDLE h_init = FindFirstFileExW(
@@ -76,101 +157,169 @@ std::expected<SpaceHogsReport, DWORD> SpaceHogsScanner::scan(
     if (h_init == INVALID_HANDLE_VALUE) {
         return std::unexpected(GetLastError());
     }
-    FindClose(h_init);
 
-    // Seed stack with root (immediate subfolder marker is empty)
-    dir_stack.emplace_back(root, L"");
+    report.total_directories = 1;
 
-    while (!dir_stack.empty()) {
-        auto [current_dir, top_subfolder] = std::move(dir_stack.back());
-        dir_stack.pop_back();
+    struct WorkItem {
+        std::wstring dir_path;
+        std::wstring subfolder_name;
+    };
+    std::vector<WorkItem> work_items;
 
-        report.total_directories++;
+    std::priority_queue<FileEntry, std::vector<FileEntry>, CompareFileMin> root_heap;
+    std::unordered_map<std::wstring, ExtensionStats> root_ext_map;
 
-        std::wstring pattern = current_dir + L"*";
-        WIN32_FIND_DATAW find_data;
-        HANDLE h_find = FindFirstFileExW(
-            pattern.c_str(),
-            FindExInfoBasic,
-            &find_data,
-            FindExSearchNameMatch,
-            nullptr,
-            FIND_FIRST_EX_LARGE_FETCH
-        );
-
-        if (h_find == INVALID_HANDLE_VALUE) {
-            continue; // Skip inaccessible folders (e.g. System Volume Information)
-        }
-
-        do {
-            const wchar_t* name = find_data.cFileName;
-            if (name[0] == L'.') {
-                if (name[1] == L'\0' || (name[1] == L'.' && name[2] == L'\0')) {
-                    continue; // Skip . and ..
-                }
-            }
-
-            // Skip junction loops and reparse points
-            if (find_data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+    do {
+        const wchar_t* name = fd.cFileName;
+        if (name[0] == L'.') {
+            if (name[1] == L'\0' || (name[1] == L'.' && name[2] == L'\0')) {
                 continue;
             }
+        }
 
-            if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                std::wstring next_dir = current_dir + name + L"\\";
-                std::wstring assigned_subfolder = top_subfolder;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+            continue;
+        }
 
-                // If currently at root, this directory is an immediate subfolder
-                if (assigned_subfolder.empty()) {
-                    assigned_subfolder = name;
-                }
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            work_items.push_back(WorkItem{root + name + L"\\", name});
+        } else {
+            ULARGE_INTEGER sz;
+            sz.LowPart = fd.nFileSizeLow;
+            sz.HighPart = fd.nFileSizeHigh;
+            const uint64_t b = sz.QuadPart;
 
-                dir_stack.emplace_back(std::move(next_dir), assigned_subfolder);
-            } else {
-                ULARGE_INTEGER file_size;
-                file_size.LowPart = find_data.nFileSizeLow;
-                file_size.HighPart = find_data.nFileSizeHigh;
-                const uint64_t bytes = file_size.QuadPart;
+            report.total_files++;
+            report.total_bytes += b;
 
-                report.total_files++;
-                report.total_bytes += bytes;
+            std::wstring ext = get_extension_lower(name);
+            auto& stat = root_ext_map[ext];
+            stat.extension = ext;
+            stat.total_bytes += b;
+            stat.file_count++;
 
-                // Top subfolder aggregation
-                if (!top_subfolder.empty()) {
-                    subfolder_sizes[top_subfolder] += bytes;
-                }
-
-                // Extension breakdown
-                std::wstring ext = get_extension_lower(name);
-                auto& stat = ext_map[ext];
-                stat.extension = ext;
-                stat.total_bytes += bytes;
-                stat.file_count++;
-
-                // Min-heap tracking for top largest files
-                if (min_heap.size() < top_count) {
-                    min_heap.push(FileEntry{current_dir + name, bytes});
-                } else if (!min_heap.empty() && bytes > min_heap.top().size_bytes) {
-                    min_heap.pop();
-                    min_heap.push(FileEntry{current_dir + name, bytes});
-                }
+            if (root_heap.size() < top_count) {
+                root_heap.push(FileEntry{root + name, b});
+            } else if (!root_heap.empty() && b > root_heap.top().size_bytes) {
+                root_heap.pop();
+                root_heap.push(FileEntry{root + name, b});
             }
-        } while (FindNextFileW(h_find, &find_data));
+        }
+    } while (FindNextFileW(h_init, &fd));
+    FindClose(h_init);
 
-        FindClose(h_find);
+    // Multi-threaded parallel processing of root subtrees
+    const unsigned int hw_concurrency = (std::max)(1u, std::thread::hardware_concurrency());
+    const size_t num_threads = (std::min)(static_cast<size_t>(hw_concurrency), work_items.size());
+
+    if (num_threads > 1) {
+        std::mutex queue_mutex;
+        size_t next_idx = 0;
+        std::vector<ThreadScanResult> thread_results(num_threads);
+        std::vector<std::thread> workers;
+
+        for (size_t t = 0; t < num_threads; ++t) {
+            workers.emplace_back([&, t]() {
+                while (true) {
+                    WorkItem item;
+                    {
+                        std::lock_guard<std::mutex> lock(queue_mutex);
+                        if (next_idx >= work_items.size()) {
+                            break;
+                        }
+                        item = work_items[next_idx++];
+                    }
+                    scan_subtree(item.dir_path, item.subfolder_name, top_count, thread_results[t]);
+                }
+            });
+        }
+
+        for (auto& w : workers) {
+            if (w.joinable()) {
+                w.join();
+            }
+        }
+
+        // Merge thread results into master report
+        std::unordered_map<std::wstring, uint64_t> combined_subfolders;
+
+        for (auto& tr : thread_results) {
+            report.total_files += tr.files;
+            report.total_directories += tr.directories;
+            report.total_bytes += tr.bytes;
+
+            while (!tr.min_heap.empty()) {
+                const auto& fe = tr.min_heap.top();
+                if (root_heap.size() < top_count) {
+                    root_heap.push(fe);
+                } else if (!root_heap.empty() && fe.size_bytes > root_heap.top().size_bytes) {
+                    root_heap.pop();
+                    root_heap.push(fe);
+                }
+                tr.min_heap.pop();
+            }
+
+            for (const auto& [ext, stat] : tr.ext_map) {
+                auto& master = root_ext_map[ext];
+                master.extension = ext;
+                master.total_bytes += stat.total_bytes;
+                master.file_count += stat.file_count;
+            }
+
+            for (const auto& [folder, bytes] : tr.subfolder_sizes) {
+                combined_subfolders[folder] += bytes;
+            }
+        }
+
+        for (const auto& [name, bytes] : combined_subfolders) {
+            report.top_subfolders.push_back(FolderSizeEntry{root + name, bytes});
+        }
+    } else {
+        // Single thread fallback
+        ThreadScanResult single_res;
+        for (const auto& item : work_items) {
+            scan_subtree(item.dir_path, item.subfolder_name, top_count, single_res);
+        }
+
+        report.total_files += single_res.files;
+        report.total_directories += single_res.directories;
+        report.total_bytes += single_res.bytes;
+
+        while (!single_res.min_heap.empty()) {
+            const auto& fe = single_res.min_heap.top();
+            if (root_heap.size() < top_count) {
+                root_heap.push(fe);
+            } else if (!root_heap.empty() && fe.size_bytes > root_heap.top().size_bytes) {
+                root_heap.pop();
+                root_heap.push(fe);
+            }
+            single_res.min_heap.pop();
+        }
+
+        for (const auto& [ext, stat] : single_res.ext_map) {
+            auto& master = root_ext_map[ext];
+            master.extension = ext;
+            master.total_bytes += stat.total_bytes;
+            master.file_count += stat.file_count;
+        }
+
+        for (const auto& [name, bytes] : single_res.subfolder_sizes) {
+            report.top_subfolders.push_back(FolderSizeEntry{root + name, bytes});
+        }
     }
 
     QueryPerformanceCounter(&end_time);
     report.scan_duration_seconds = static_cast<double>(end_time.QuadPart - start_time.QuadPart) / static_cast<double>(freq.QuadPart);
 
-    // Extract and sort top files in descending order
-    while (!min_heap.empty()) {
-        report.top_files.push_back(min_heap.top());
-        min_heap.pop();
+    // Extract sorted top files
+    while (!root_heap.empty()) {
+        report.top_files.push_back(root_heap.top());
+        root_heap.pop();
     }
     std::reverse(report.top_files.begin(), report.top_files.end());
 
-    // Extract and sort top extensions
-    for (const auto& [_, stat] : ext_map) {
+    // Extract sorted top extensions
+    for (const auto& [_, stat] : root_ext_map) {
         report.top_extensions.push_back(stat);
     }
     std::sort(report.top_extensions.begin(), report.top_extensions.end(), [](const ExtensionStats& a, const ExtensionStats& b) {
@@ -180,10 +329,7 @@ std::expected<SpaceHogsReport, DWORD> SpaceHogsScanner::scan(
         report.top_extensions.resize(10);
     }
 
-    // Extract and sort top subfolders
-    for (const auto& [name, bytes] : subfolder_sizes) {
-        report.top_subfolders.push_back(FolderSizeEntry{root + name, bytes});
-    }
+    // Sort top subfolders
     std::sort(report.top_subfolders.begin(), report.top_subfolders.end(), [](const FolderSizeEntry& a, const FolderSizeEntry& b) {
         return a.size_bytes > b.size_bytes;
     });
