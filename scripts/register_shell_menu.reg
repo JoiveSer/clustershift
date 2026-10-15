@@ -1,0 +1,18 @@
+Windows Registry Editor Version 5.00
+
+; ClusterShift — Windows Explorer Context Menu Integration
+; Architect & Developer: Joive
+
+[HKEY_CLASSES_ROOT\Directory\shell\ClusterShift]
+@="ClusterShift: Scan Fragmentation [by Joive]"
+"Icon"="powershell.exe"
+
+[HKEY_CLASSES_ROOT\Directory\shell\ClusterShift\command]
+@="powershell.exe -NoExit -Command \"clustershift scan \\\"%1\\\" --recursive\""
+
+[HKEY_CLASSES_ROOT\Drive\shell\ClusterShift]
+@="ClusterShift: Storage Health & Map [by Joive]"
+"Icon"="powershell.exe"
+
+[HKEY_CLASSES_ROOT\Drive\shell\ClusterShift\command]
+@="powershell.exe -NoExit -Command \"clustershift info %1; clustershift health %1; clustershift map %1\""

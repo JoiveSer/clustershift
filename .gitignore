@@ -1,0 +1,31 @@
+# Build outputs
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.exp
+build/
+bin/
+dist/
+
+# Release archives
+*.zip
+*.tar.gz
+
+# Private LLM instructions / local specs
+AI_CODER_SPEC.md
+_private/
+
+# Temporary test files
+*.vhdx
+*.tmp
+*.log
+
+# Visual Studio / IDE files
+.vs/
+*.sln
+*.vcxproj*
+*.user
+.vscode/
+.idea/

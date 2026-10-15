@@ -1,0 +1,30 @@
+name: Build and Release ClusterShift
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on Windows (MSVC x64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Compile Release Binary
+        run: |
+          cl /std:c++latest /EHsc /O2 /DUNICODE /D_UNICODE /W4 /utf-8 /Iinclude src\core\*.cpp src\main.cpp /Fe:clustershift.exe /link advapi32.lib shell32.lib
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClusterShift-Windows-x64
+          path: clustershift.exe
