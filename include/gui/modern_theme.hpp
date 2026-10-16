@@ -37,24 +37,24 @@ inline void apply_modern_theme() {
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* colors = style.Colors;
 
-    // Strict Tiling Window Manager Geometry (i3 / bspwm / Hyprland)
-    // Zero bubbly curves, clean 1px borders, compact enterprise density
-    style.WindowRounding    = 0.0f;
-    style.ChildRounding     = 2.0f;
-    style.FrameRounding     = 2.0f;
-    style.PopupRounding     = 2.0f;
-    style.ScrollbarRounding = 0.0f;
-    style.GrabRounding      = 2.0f;
-    style.TabRounding       = 0.0f;
+    // Strict Unix / Cosmic OS Desktop Geometry
+    // Tactile 8px window curves, clean 1px borders, compact enterprise density
+    style.WindowRounding    = 8.0f;
+    style.ChildRounding     = 4.0f;
+    style.FrameRounding     = 4.0f;
+    style.PopupRounding     = 6.0f;
+    style.ScrollbarRounding = 4.0f;
+    style.GrabRounding      = 4.0f;
+    style.TabRounding       = 4.0f;
 
     style.WindowBorderSize  = 1.0f;
     style.ChildBorderSize   = 1.0f;
     style.PopupBorderSize   = 1.0f;
     style.FrameBorderSize   = 1.0f;
 
-    style.WindowPadding     = ImVec2(8.0f, 8.0f);
+    style.WindowPadding     = ImVec2(10.0f, 10.0f);
     style.FramePadding      = ImVec2(8.0f, 5.0f);
-    style.ItemSpacing       = ImVec2(6.0f, 6.0f);
+    style.ItemSpacing       = ImVec2(8.0f, 6.0f);
     style.ItemInnerSpacing  = ImVec2(6.0f, 4.0f);
     style.ScrollbarSize     = 8.0f;
 
