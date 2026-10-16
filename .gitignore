@@ -29,3 +29,4 @@ _private/
 *.user
 .vscode/
 .idea/
+*.ini
