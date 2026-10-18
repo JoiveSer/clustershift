@@ -4,47 +4,41 @@
 
 namespace clustershift::gui {
 
-// Unix/Linux Desktop (i3, Hyprland, Waybar) & Terminal Design System Tokens
-// Inspired by Tokyo Night / Catppuccin Mocha
-struct Palette {
-    static constexpr ImVec4 AppBg          = ImVec4(0.055f, 0.063f, 0.082f, 1.00f); // #0E1015 (Deep matte dark)
-    static constexpr ImVec4 BarBg          = ImVec4(0.071f, 0.078f, 0.110f, 1.00f); // #12141C (Polybar top bar)
-    static constexpr ImVec4 PaneBg         = ImVec4(0.086f, 0.094f, 0.133f, 1.00f); // #161822 (Tiling window surface)
-    static constexpr ImVec4 PaneHeader     = ImVec4(0.110f, 0.118f, 0.169f, 1.00f); // #1C1E2B (Titlebar background)
-    static constexpr ImVec4 Border         = ImVec4(0.157f, 0.165f, 0.227f, 1.00f); // #282A3A (1px sharp border)
-    static constexpr ImVec4 BorderSubtle   = ImVec4(0.118f, 0.125f, 0.173f, 1.00f); // #1E202C
-    static constexpr ImVec4 BorderActive   = ImVec4(0.133f, 0.827f, 0.933f, 1.00f); // #22D3EE (Cyan-400 focus highlight)
-
-    // Functional Accents
-    static constexpr ImVec4 PromptGreen    = ImVec4(0.063f, 0.725f, 0.506f, 1.00f); // #10B981 (Emerald-400, CLI prompt $)
-    static constexpr ImVec4 AccentCyan     = ImVec4(0.133f, 0.827f, 0.933f, 1.00f); // #22D3EE (Cyan-400)
-    static constexpr ImVec4 AccentPurple   = ImVec4(0.753f, 0.518f, 0.988f, 1.00f); // #C084FC (Purple-400)
-    static constexpr ImVec4 AccentDim      = ImVec4(0.133f, 0.827f, 0.933f, 0.12f); // rgba(34, 211, 238, 0.12)
-    static constexpr ImVec4 AccentActive   = ImVec4(0.133f, 0.827f, 0.933f, 0.25f);
-
-    // Status Signals
-    static constexpr ImVec4 StatusWarn     = ImVec4(0.984f, 0.749f, 0.141f, 1.00f); // #FBBF24 (Amber-400, [WARN]/[BUSY])
-    static constexpr ImVec4 StatusError    = ImVec4(0.984f, 0.443f, 0.522f, 1.00f); // #FB7185 (Rose-400, [FAIL]/[KILL])
-    static constexpr ImVec4 StatusInfo     = ImVec4(0.376f, 0.647f, 0.980f, 1.00f); // #60A5FA (Blue-400, [INFO])
-
-    // Monospace Text Hierarchy
-    static constexpr ImVec4 TextPrimary    = ImVec4(0.953f, 0.957f, 0.965f, 1.00f); // #F3F4F6
-    static constexpr ImVec4 TextSecondary  = ImVec4(0.612f, 0.639f, 0.686f, 1.00f); // #9CA3AF
-    static constexpr ImVec4 TextMuted      = ImVec4(0.337f, 0.373f, 0.537f, 1.00f); // #565F89 (Tokyo Night muted)
+// Windows XP Luna Blue & Bliss Design System Tokens
+struct XpPalette {
+    static constexpr ImVec4 WindowBg         = ImVec4(0.925f, 0.914f, 0.847f, 1.00f); // #ECE9D8 (Classic XP Gray)
+    static constexpr ImVec4 ContentBg        = ImVec4(1.000f, 1.000f, 1.000f, 1.00f); // #FFFFFF (Clean White)
+    static constexpr ImVec4 TitleBlueLeft    = ImVec4(0.000f, 0.333f, 0.918f, 1.00f); // #0055EA (Royal Luna Blue)
+    static constexpr ImVec4 TitleBlueMid     = ImVec4(0.220f, 0.553f, 0.965f, 1.00f); // #388DF6
+    static constexpr ImVec4 CloseRed         = ImVec4(0.886f, 0.208f, 0.157f, 1.00f); // #E23528 (XP Red Close)
+    static constexpr ImVec4 CloseRedHover    = ImVec4(0.960f, 0.350f, 0.300f, 1.00f);
+    static constexpr ImVec4 StartGreen       = ImVec4(0.220f, 0.557f, 0.235f, 1.00f); // #388E3C (XP Start Green)
+    static constexpr ImVec4 StartGreenHover  = ImVec4(0.300f, 0.680f, 0.320f, 1.00f);
+    static constexpr ImVec4 TaskbarBlue      = ImVec4(0.141f, 0.369f, 0.863f, 1.00f); // #245EDC (XP Taskbar)
+    static constexpr ImVec4 TrayBlue         = ImVec4(0.059f, 0.267f, 0.722f, 1.00f); // #0F44B8 (XP Tray)
+    static constexpr ImVec4 SelectionBlue    = ImVec4(0.192f, 0.416f, 0.773f, 1.00f); // #316AC5 (XP Selection)
+    static constexpr ImVec4 BorderBlue       = ImVec4(0.000f, 0.235f, 0.533f, 1.00f); // #003C88 (Dark Blue Border)
+    static constexpr ImVec4 TextDark         = ImVec4(0.000f, 0.000f, 0.000f, 1.00f); // #000000
+    static constexpr ImVec4 TextMuted        = ImVec4(0.350f, 0.350f, 0.350f, 1.00f); // #595959
+    static constexpr ImVec4 TextBlueHeader   = ImVec4(0.000f, 0.200f, 0.600f, 1.00f); // #003399 (XP Section Header)
+    static constexpr ImVec4 GoldCoin         = ImVec4(1.000f, 0.843f, 0.000f, 1.00f); // #FFD700
+    static constexpr ImVec4 GoldCoinBg       = ImVec4(0.180f, 0.140f, 0.040f, 0.90f);
 };
+
+// Aliases for compatibility
+using Palette = XpPalette;
 
 inline void apply_modern_theme() {
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* colors = style.Colors;
 
-    // Strict Unix / Cosmic OS Desktop Geometry
-    // Tactile 8px window curves, clean 1px borders, compact enterprise density
+    // Windows XP Luna Geometry
     style.WindowRounding    = 8.0f;
-    style.ChildRounding     = 4.0f;
-    style.FrameRounding     = 4.0f;
-    style.PopupRounding     = 6.0f;
-    style.ScrollbarRounding = 4.0f;
-    style.GrabRounding      = 4.0f;
+    style.ChildRounding     = 3.0f;
+    style.FrameRounding     = 3.0f;
+    style.PopupRounding     = 4.0f;
+    style.ScrollbarRounding = 2.0f;
+    style.GrabRounding      = 2.0f;
     style.TabRounding       = 4.0f;
 
     style.WindowBorderSize  = 1.0f;
@@ -52,64 +46,64 @@ inline void apply_modern_theme() {
     style.PopupBorderSize   = 1.0f;
     style.FrameBorderSize   = 1.0f;
 
-    style.WindowPadding     = ImVec2(10.0f, 10.0f);
-    style.FramePadding      = ImVec2(8.0f, 5.0f);
+    style.WindowPadding     = ImVec2(8.0f, 8.0f);
+    style.FramePadding      = ImVec2(7.0f, 4.0f);
     style.ItemSpacing       = ImVec2(8.0f, 6.0f);
     style.ItemInnerSpacing  = ImVec2(6.0f, 4.0f);
-    style.ScrollbarSize     = 8.0f;
+    style.ScrollbarSize     = 14.0f;
 
-    // Terminal & Tiling Palette Mapping
-    colors[ImGuiCol_Text]                  = Palette::TextPrimary;
-    colors[ImGuiCol_TextDisabled]          = Palette::TextMuted;
-    colors[ImGuiCol_WindowBg]              = Palette::AppBg;
-    colors[ImGuiCol_ChildBg]               = Palette::PaneBg;
-    colors[ImGuiCol_PopupBg]               = Palette::PaneBg;
-    colors[ImGuiCol_Border]                = Palette::Border;
-    colors[ImGuiCol_BorderShadow]          = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    colors[ImGuiCol_FrameBg]               = Palette::BarBg;
-    colors[ImGuiCol_FrameBgHovered]        = Palette::PaneHeader;
-    colors[ImGuiCol_FrameBgActive]         = Palette::AccentDim;
-    colors[ImGuiCol_TitleBg]               = Palette::BarBg;
-    colors[ImGuiCol_TitleBgActive]         = Palette::PaneHeader;
-    colors[ImGuiCol_TitleBgCollapsed]      = Palette::BarBg;
-    colors[ImGuiCol_MenuBarBg]             = Palette::BarBg;
-    colors[ImGuiCol_ScrollbarBg]           = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    colors[ImGuiCol_ScrollbarGrab]         = ImVec4(1.0f, 1.0f, 1.0f, 0.14f);
-    colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(1.0f, 1.0f, 1.0f, 0.28f);
-    colors[ImGuiCol_ScrollbarGrabActive]   = Palette::AccentCyan;
-    colors[ImGuiCol_CheckMark]             = Palette::AccentCyan;
-    colors[ImGuiCol_SliderGrab]            = Palette::AccentCyan;
-    colors[ImGuiCol_SliderGrabActive]      = Palette::PromptGreen;
-    colors[ImGuiCol_Button]                = Palette::BarBg;
-    colors[ImGuiCol_ButtonHovered]         = Palette::PaneHeader;
-    colors[ImGuiCol_ButtonActive]          = Palette::AccentDim;
-    colors[ImGuiCol_Header]                = Palette::PaneHeader;
-    colors[ImGuiCol_HeaderHovered]         = Palette::AccentDim;
-    colors[ImGuiCol_HeaderActive]          = Palette::AccentActive;
-    colors[ImGuiCol_Separator]             = Palette::Border;
-    colors[ImGuiCol_SeparatorHovered]      = Palette::AccentCyan;
-    colors[ImGuiCol_SeparatorActive]       = Palette::AccentCyan;
-    colors[ImGuiCol_ResizeGrip]            = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    colors[ImGuiCol_ResizeGripHovered]     = Palette::AccentCyan;
-    colors[ImGuiCol_ResizeGripActive]      = Palette::AccentCyan;
-    colors[ImGuiCol_Tab]                   = Palette::BarBg;
-    colors[ImGuiCol_TabHovered]            = Palette::PaneHeader;
-    colors[ImGuiCol_TabSelected]           = Palette::PaneBg;
-    colors[ImGuiCol_TabDimmed]             = Palette::BarBg;
-    colors[ImGuiCol_TabDimmedSelected]     = Palette::PaneBg;
-    colors[ImGuiCol_PlotLines]             = Palette::AccentCyan;
-    colors[ImGuiCol_PlotLinesHovered]      = Palette::PromptGreen;
-    colors[ImGuiCol_PlotHistogram]         = Palette::AccentCyan;
-    colors[ImGuiCol_PlotHistogramHovered]  = Palette::PromptGreen;
-    colors[ImGuiCol_TableHeaderBg]         = Palette::BarBg;
-    colors[ImGuiCol_TableBorderStrong]     = Palette::Border;
-    colors[ImGuiCol_TableBorderLight]      = Palette::BorderSubtle;
-    colors[ImGuiCol_TableRowBg]            = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    colors[ImGuiCol_TableRowBgAlt]         = ImVec4(1.0f, 1.0f, 1.0f, 0.02f);
-    colors[ImGuiCol_TextSelectedBg]        = Palette::AccentDim;
-    colors[ImGuiCol_DragDropTarget]        = Palette::AccentCyan;
-    colors[ImGuiCol_NavHighlight]          = Palette::AccentCyan;
-    colors[ImGuiCol_NavWindowingHighlight] = Palette::AccentCyan;
+    // Authentic Windows XP Luna Color Scheme
+    colors[ImGuiCol_Text]                  = ImVec4(0.00f, 0.00f, 0.00f, 1.00f); // Black text
+    colors[ImGuiCol_TextDisabled]          = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
+    colors[ImGuiCol_WindowBg]              = XpPalette::WindowBg;                  // #ECE9D8
+    colors[ImGuiCol_ChildBg]               = XpPalette::ContentBg;                 // #FFFFFF
+    colors[ImGuiCol_PopupBg]               = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImGuiCol_Border]                = XpPalette::BorderBlue;                // #003C88
+    colors[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_FrameBg]               = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImGuiCol_FrameBgHovered]        = ImVec4(0.95f, 0.96f, 1.00f, 1.00f);
+    colors[ImGuiCol_FrameBgActive]         = ImVec4(0.90f, 0.93f, 1.00f, 1.00f);
+    colors[ImGuiCol_TitleBg]               = XpPalette::TitleBlueLeft;             // #0055EA
+    colors[ImGuiCol_TitleBgActive]         = XpPalette::TitleBlueLeft;
+    colors[ImGuiCol_TitleBgCollapsed]      = XpPalette::TitleBlueLeft;
+    colors[ImGuiCol_MenuBarBg]             = XpPalette::WindowBg;
+    colors[ImGuiCol_ScrollbarBg]           = ImVec4(0.92f, 0.92f, 0.92f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrab]         = ImVec4(0.78f, 0.82f, 0.90f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.68f, 0.74f, 0.85f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabActive]   = XpPalette::SelectionBlue;
+    colors[ImGuiCol_CheckMark]             = ImVec4(0.13f, 0.55f, 0.13f, 1.00f); // Green check
+    colors[ImGuiCol_SliderGrab]            = XpPalette::TitleBlueLeft;
+    colors[ImGuiCol_SliderGrabActive]      = XpPalette::SelectionBlue;
+    colors[ImGuiCol_Button]                = ImVec4(0.94f, 0.94f, 0.94f, 1.00f);
+    colors[ImGuiCol_ButtonHovered]         = ImVec4(0.98f, 0.88f, 0.58f, 1.00f); // XP Orange button hover!
+    colors[ImGuiCol_ButtonActive]          = ImVec4(0.95f, 0.78f, 0.40f, 1.00f);
+    colors[ImGuiCol_Header]                = XpPalette::SelectionBlue;            // #316AC5
+    colors[ImGuiCol_HeaderHovered]         = ImVec4(0.25f, 0.50f, 0.85f, 1.00f);
+    colors[ImGuiCol_HeaderActive]          = ImVec4(0.15f, 0.35f, 0.70f, 1.00f);
+    colors[ImGuiCol_Separator]             = ImVec4(0.75f, 0.75f, 0.75f, 1.00f);
+    colors[ImGuiCol_SeparatorHovered]      = XpPalette::SelectionBlue;
+    colors[ImGuiCol_SeparatorActive]       = XpPalette::SelectionBlue;
+    colors[ImGuiCol_ResizeGrip]            = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_ResizeGripHovered]     = XpPalette::SelectionBlue;
+    colors[ImGuiCol_ResizeGripActive]      = XpPalette::SelectionBlue;
+    colors[ImGuiCol_Tab]                   = ImVec4(0.85f, 0.85f, 0.85f, 1.00f);
+    colors[ImGuiCol_TabHovered]            = ImVec4(0.95f, 0.90f, 0.75f, 1.00f);
+    colors[ImGuiCol_TabSelected]           = XpPalette::WindowBg;
+    colors[ImGuiCol_TabDimmed]             = ImVec4(0.80f, 0.80f, 0.80f, 1.00f);
+    colors[ImGuiCol_TabDimmedSelected]     = XpPalette::WindowBg;
+    colors[ImGuiCol_PlotLines]             = XpPalette::TitleBlueLeft;
+    colors[ImGuiCol_PlotLinesHovered]      = ImVec4(0.88f, 0.20f, 0.15f, 1.00f);
+    colors[ImGuiCol_PlotHistogram]         = XpPalette::TitleBlueLeft;
+    colors[ImGuiCol_PlotHistogramHovered]  = ImVec4(0.88f, 0.20f, 0.15f, 1.00f);
+    colors[ImGuiCol_TableHeaderBg]         = ImVec4(0.90f, 0.92f, 0.96f, 1.00f);
+    colors[ImGuiCol_TableBorderStrong]     = ImVec4(0.70f, 0.75f, 0.85f, 1.00f);
+    colors[ImGuiCol_TableBorderLight]      = ImVec4(0.85f, 0.88f, 0.94f, 1.00f);
+    colors[ImGuiCol_TableRowBg]            = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImGuiCol_TableRowBgAlt]         = ImVec4(0.96f, 0.97f, 1.00f, 1.00f);
+    colors[ImGuiCol_TextSelectedBg]        = XpPalette::SelectionBlue;
+    colors[ImGuiCol_DragDropTarget]        = XpPalette::SelectionBlue;
+    colors[ImGuiCol_NavHighlight]          = XpPalette::SelectionBlue;
+    colors[ImGuiCol_NavWindowingHighlight] = XpPalette::SelectionBlue;
 }
 
 } // namespace clustershift::gui

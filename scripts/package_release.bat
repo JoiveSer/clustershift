@@ -16,6 +16,7 @@ copy "clustershift.exe" "%DIST_DIR%\"
 copy "clustershift-gui.exe" "%DIST_DIR%\"
 copy "README.md" "%DIST_DIR%\"
 copy "LICENSE" "%DIST_DIR%\"
+if exist "assets" xcopy /E /I /Y "assets" "%DIST_DIR%\assets" >nul
 
 powershell -Command "Compress-Archive -Path '%DIST_DIR%' -DestinationPath 'ClusterShift-v0.6-by-Joive.zip' -Force"
 
