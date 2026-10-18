@@ -56,9 +56,15 @@ IDXGISwapChain*         g_pSwapChain = nullptr;
 UINT                    g_ResizeWidth = 0, g_ResizeHeight = 0;
 ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 
-// Texture Resource for Authentic Photographic Bliss Wallpaper
+// Texture Resources for Windows XP
 ID3D11ShaderResourceView* g_pBlissTextureView = nullptr;
 int g_bliss_tex_w = 0, g_bliss_tex_h = 0;
+
+ID3D11ShaderResourceView* g_pIconsTextureView = nullptr;
+int g_icons_tex_w = 0, g_icons_tex_h = 0;
+
+ID3D11ShaderResourceView* g_pThemeTextureView = nullptr;
+int g_theme_tex_w = 0, g_theme_tex_h = 0;
 
 // Fonts (Windows XP Tahoma & Consolas)
 ImFont* g_font_xp_small  = nullptr; // 11px: status & captions
@@ -136,6 +142,41 @@ bool LoadTextureFromFileWIC(ID3D11Device* pDevice, const wchar_t* filename, ID3D
     if (out_width) *out_width = width;
     if (out_height) *out_height = height;
     return true;
+}
+
+inline std::wstring ResolveAssetPath(const std::wstring& rel_path) {
+    wchar_t exe_buf[MAX_PATH] = { 0 };
+    if (GetModuleFileNameW(NULL, exe_buf, MAX_PATH)) {
+        std::filesystem::path exe_dir = std::filesystem::path(exe_buf).parent_path();
+        auto p1 = exe_dir / rel_path;
+        if (std::filesystem::exists(p1)) return p1.wstring();
+        auto p2 = exe_dir / L".." / rel_path;
+        if (std::filesystem::exists(p2)) return p2.wstring();
+        auto p3 = exe_dir / L"../.." / rel_path;
+        if (std::filesystem::exists(p3)) return p3.wstring();
+    }
+    if (std::filesystem::exists(rel_path)) return rel_path;
+    std::filesystem::path fixed_dir = L"C:\\Users\\kyryl\\.gemini\\antigravity\\scratch\\cluster_shift";
+    auto p4 = fixed_dir / rel_path;
+    if (std::filesystem::exists(p4)) return p4.wstring();
+    return L"";
+}
+
+// WinIcons_32 is 736x704: 23 columns x 22 rows of 32x32 icons
+inline void GetIconUV(int col, int row, ImVec2& uv0, ImVec2& uv1) {
+    const float tex_w = 736.0f;
+    const float tex_h = 704.0f;
+    const float icon_sz = 32.0f;
+    uv0 = ImVec2((col * icon_sz) / tex_w, (row * icon_sz) / tex_h);
+    uv1 = ImVec2(((col + 1) * icon_sz) / tex_w, ((row + 1) * icon_sz) / tex_h);
+}
+
+inline void DrawXpIcon(ImDrawList* dl, int col, int row, const ImVec2& pos, float size = 32.0f) {
+    if (g_pIconsTextureView && dl) {
+        ImVec2 uv0, uv1;
+        GetIconUV(col, row, uv0, uv1);
+        dl->AddImage(reinterpret_cast<ImTextureID>(g_pIconsTextureView), pos, ImVec2(pos.x + size, pos.y + size), uv0, uv1);
+    }
 }
 
 inline std::vector<wchar_t> enumerate_all_drives() {
@@ -311,69 +352,42 @@ void RefreshDrives() {
     }
 }
 
-// Micro-Component 1: Windows XP Bliss Wallpaper (Photographic or Procedural Fallback)
+// Micro-Component 1: Windows XP Bliss Wallpaper (Authentic Photographic Wallpaper)
 void RenderBlissWallpaper(const ImVec2& sz) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
-
     if (g_pBlissTextureView) {
-        // Draw the REAL authentic photographic Bliss wallpaper from WinXp.zip!
         dl->AddImage((ImTextureID)g_pBlissTextureView, ImVec2(0, 0), sz);
     } else {
-        // Procedural Windows XP Bliss Fallback
-        float horizon_y = sz.y * 0.62f;
-        dl->AddRectFilledMultiColor(
-            ImVec2(0, 0), ImVec2(sz.x, horizon_y),
-            IM_COL32(21, 85, 175, 255),
-            IM_COL32(28, 98, 190, 255),
-            IM_COL32(165, 218, 252, 255),
-            IM_COL32(148, 206, 248, 255)
-        );
-
-        // Clouds
-        dl->AddCircleFilled(ImVec2(sz.x * 0.22f, sz.y * 0.22f), sz.x * 0.09f, IM_COL32(255, 255, 255, 200));
-        dl->AddCircleFilled(ImVec2(sz.x * 0.27f, sz.y * 0.18f), sz.x * 0.10f, IM_COL32(255, 255, 255, 220));
-        dl->AddCircleFilled(ImVec2(sz.x * 0.77f, sz.y * 0.14f), sz.x * 0.08f, IM_COL32(255, 255, 255, 190));
-
-        // Green Rolling Hill
-        const int step_count = 32;
-        ImVec2 hill_points[step_count + 3];
-        int pt_idx = 0;
-        for (int i = 0; i <= step_count; ++i) {
-            float t = (float)i / (float)step_count;
-            float x = t * sz.x;
-            float y = sz.y * 0.58f - (sinf(t * 3.14159f) * sz.y * 0.14f);
-            hill_points[pt_idx++] = ImVec2(x, y);
-        }
-        hill_points[pt_idx++] = ImVec2(sz.x, sz.y);
-        hill_points[pt_idx++] = ImVec2(0.0f, sz.y);
-        dl->AddConvexPolyFilled(hill_points, pt_idx, IM_COL32(75, 175, 25, 255));
+        // Authentic solid Windows XP Royal Blue fallback (#004E98)
+        dl->AddRectFilled(ImVec2(0, 0), sz, IM_COL32(0, 78, 152, 255));
     }
 }
 
-// Micro-Component 2: Desktop Icons (Real Interactive Workstation Items)
+// Micro-Component 2: Desktop Icons (Original 32x32 XP Icons from WinIcons_32.png)
 void RenderDesktopIcons(GuiState& state, const ImVec2& sz) {
     struct DesktopItem {
         const char* label;
-        const char* glyph;
+        int icon_col;
+        int icon_row;
         AppWindowState& app;
     };
 
     DesktopItem items[6] = {
-        { "Мой компьютер",   "💻", state.win_storage },
-        { "Тест скорости",   "⚡", state.win_bench },
-        { "Очистка диска",   "🧹", state.win_hogs },
-        { "Дефрагментатор",  "▦",  state.win_map },
-        { "Панель управления","⚙",  state.win_settings },
-        { "Командная строка","📟", state.win_terminal },
+        { "Мой компьютер",     5,  3, state.win_storage },
+        { "Тест скорости",    20, 15, state.win_bench },
+        { "Очистка диска",    19,  0, state.win_hogs },
+        { "Дефрагментатор",   22, 15, state.win_map },
+        { "Панель управления", 18,  0, state.win_settings },
+        { "Командная строка",   4, 10, state.win_terminal },
     };
 
-    float start_x = 24.0f;
-    float start_y = 28.0f;
-    float icon_box_w = 82.0f;
-    float icon_box_h = 70.0f;
-    float spacing_y = 12.0f;
+    float start_x = 20.0f;
+    float start_y = 20.0f;
+    float icon_box_w = 90.0f;
+    float icon_box_h = 76.0f;
+    float spacing_y = 10.0f;
 
-    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
 
     for (int i = 0; i < 6; ++i) {
         float x = start_x;
@@ -386,7 +400,6 @@ void RenderDesktopIcons(GuiState& state, const ImVec2& sz) {
 
         if (ImGui::InvisibleButton("##DesktopIconBtn", ImVec2(icon_box_w, icon_box_h))) {
             if (state.selected_desktop_icon == i) {
-                // Double click / second click opens app!
                 items[i].app.is_open = true;
                 items[i].app.is_minimized = false;
             } else {
@@ -400,23 +413,28 @@ void RenderDesktopIcons(GuiState& state, const ImVec2& sz) {
 
         bool is_hovered = ImGui::IsItemHovered();
 
-        // Selection box (Classic Windows XP dotted/blue box)
+        // 32x32 original icon from WinIcons_32.png
+        ImVec2 icon_pos(x + (icon_box_w - 32.0f) * 0.5f, y + 4.0f);
+        DrawXpIcon(dl, items[i].icon_col, items[i].icon_row, icon_pos, 32.0f);
+
+        // Text dimensions
+        ImVec2 text_sz = ImGui::CalcTextSize(items[i].label);
+        float text_box_w = text_sz.x + 8.0f;
+        float text_box_h = text_sz.y + 4.0f;
+        ImVec2 text_box_p0(x + (icon_box_w - text_box_w) * 0.5f, y + 42.0f);
+        ImVec2 text_box_p1(text_box_p0.x + text_box_w, text_box_p0.y + text_box_h);
+
         if (is_selected) {
-            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + icon_box_w, y + icon_box_h), IM_COL32(49, 106, 197, 160), 3.0f);
-            dl->AddRect(ImVec2(x, y), ImVec2(x + icon_box_w, y + icon_box_h), IM_COL32(255, 255, 255, 200), 3.0f, 0, 1.0f);
+            dl->AddRectFilled(text_box_p0, text_box_p1, IM_COL32(49, 106, 197, 230), 2.0f);
+            dl->AddRect(text_box_p0, text_box_p1, IM_COL32(255, 255, 255, 220), 2.0f, 0, 1.0f);
         } else if (is_hovered) {
-            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + icon_box_w, y + icon_box_h), IM_COL32(255, 255, 255, 50), 3.0f);
-            dl->AddRect(ImVec2(x, y), ImVec2(x + icon_box_w, y + icon_box_h), IM_COL32(255, 255, 255, 120), 3.0f, 0, 1.0f);
+            dl->AddRectFilled(text_box_p0, text_box_p1, IM_COL32(255, 255, 255, 60), 2.0f);
         }
 
-        // Glyph
-        float glyph_w = ImGui::CalcTextSize(items[i].glyph).x;
-        dl->AddText(ImVec2(x + (icon_box_w - glyph_w) * 0.5f, y + 8.0f), IM_COL32(255, 255, 255, 255), items[i].glyph);
-
-        // Label with shadow
-        float label_w = ImGui::CalcTextSize(items[i].label).x;
-        ImVec2 text_pos(x + (icon_box_w - label_w) * 0.5f, y + 36.0f);
-        dl->AddText(ImVec2(text_pos.x + 1.0f, text_pos.y + 1.0f), IM_COL32(0, 0, 0, 220), items[i].label);
+        ImVec2 text_pos(text_box_p0.x + 4.0f, text_box_p0.y + 2.0f);
+        if (!is_selected) {
+            dl->AddText(ImVec2(text_pos.x + 1.0f, text_pos.y + 1.0f), IM_COL32(0, 0, 0, 255), items[i].label);
+        }
         dl->AddText(text_pos, IM_COL32(255, 255, 255, 255), items[i].label);
 
         ImGui::PopID();
@@ -456,35 +474,49 @@ void RenderDonateBadge(GuiState& state, const ImVec2& sz) {
     ImGui::End();
 }
 
-// Micro-Component 4: Classic Windows XP Luna Window Titlebar (with Red Close Button)
-void RenderAppTitlebar(const char* app_name, const char* path_tag, AppWindowState& app) {
+// Micro-Component 4: Classic Windows XP Luna Window Titlebar (with Authentic Sprites)
+void RenderAppTitlebar(const char* app_name, const char* path_tag, AppWindowState& app, int icon_col = 5, int icon_row = 3) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 p0 = ImGui::GetCursorScreenPos();
     float width = ImGui::GetContentRegionAvail().x;
-    float height = 26.0f;
+    float height = 28.0f;
     ImVec2 p1 = ImVec2(p0.x + width, p0.y + height);
 
-    // Windows XP Luna Royal Blue Gradient Titlebar (#0055EA -> #388DF6 -> #0055EA)
-    dl->AddRectFilledMultiColor(
-        p0, p1,
-        IM_COL32(0, 85, 234, 255),
-        IM_COL32(56, 141, 246, 255),
-        IM_COL32(0, 85, 234, 255),
-        IM_COL32(0, 85, 234, 255)
-    );
-    dl->AddLine(p0, ImVec2(p1.x, p0.y), IM_COL32(100, 165, 255, 255), 1.0f);
+    // 1. Draw Titlebar Header from UI Theme.png
+    if (g_pThemeTextureView) {
+        // Left rounded cap (w=40, h=28)
+        ImVec2 uv_left_0(27.0f / 1024.0f, 393.0f / 1024.0f);
+        ImVec2 uv_left_1(80.0f / 1024.0f, 423.0f / 1024.0f);
+        dl->AddImage((ImTextureID)g_pThemeTextureView, p0, ImVec2(p0.x + 40.0f, p1.y), uv_left_0, uv_left_1);
 
-    // Title text with shadow
+        // Middle stretch
+        ImVec2 uv_mid_0(100.0f / 1024.0f, 393.0f / 1024.0f);
+        ImVec2 uv_mid_1(140.0f / 1024.0f, 423.0f / 1024.0f);
+        dl->AddImage((ImTextureID)g_pThemeTextureView, ImVec2(p0.x + 40.0f, p0.y), ImVec2(p1.x - 40.0f, p1.y), uv_mid_0, uv_mid_1);
+
+        // Right rounded cap
+        ImVec2 uv_right_0(176.0f / 1024.0f, 393.0f / 1024.0f);
+        ImVec2 uv_right_1(226.0f / 1024.0f, 423.0f / 1024.0f);
+        dl->AddImage((ImTextureID)g_pThemeTextureView, ImVec2(p1.x - 40.0f, p0.y), p1, uv_right_0, uv_right_1);
+    } else {
+        // Fallback Luna Gradient
+        dl->AddRectFilledMultiColor(p0, p1, IM_COL32(0, 85, 234, 255), IM_COL32(56, 141, 246, 255), IM_COL32(0, 85, 234, 255), IM_COL32(0, 85, 234, 255));
+    }
+
+    // 2. Window Icon (16x16)
+    DrawXpIcon(dl, icon_col, icon_row, ImVec2(p0.x + 6.0f, p0.y + 6.0f), 16.0f);
+
+    // 3. Title text with shadow
     char title_buf[256];
     snprintf(title_buf, sizeof(title_buf), "%s  —  %s", app_name, path_tag);
-    ImVec2 text_pos(p0.x + 8.0f, p0.y + 5.0f);
-    dl->AddText(ImVec2(text_pos.x + 1.0f, text_pos.y + 1.0f), IM_COL32(0, 30, 80, 200), title_buf);
+    ImVec2 text_pos(p0.x + 28.0f, p0.y + 6.0f);
+    dl->AddText(ImVec2(text_pos.x + 1.0f, text_pos.y + 1.0f), IM_COL32(0, 30, 80, 220), title_buf);
     dl->AddText(text_pos, IM_COL32(255, 255, 255, 255), title_buf);
 
-    // Drag area
-    float drag_w = width - 180.0f;
+    // 4. Drag area
+    float drag_w = width - 120.0f;
     if (drag_w > 10.0f && !app.is_maximized) {
-        ImGui::SetCursorScreenPos(ImVec2(p0.x + 8.0f, p0.y));
+        ImGui::SetCursorScreenPos(ImVec2(p0.x + 28.0f, p0.y));
         ImGui::InvisibleButton("##XpTitleDrag", ImVec2(drag_w, height));
         if (ImGui::IsItemActive()) {
             ImVec2 delta = ImGui::GetIO().MouseDelta;
@@ -492,38 +524,58 @@ void RenderAppTitlebar(const char* app_name, const char* path_tag, AppWindowStat
         }
     }
 
-    // Controls: [ _ ] [ □ ] [ X ]
-    float btn_w = 20.0f, btn_h = 20.0f;
-    float btns_start_x = p1.x - 66.0f;
-    float btn_y = p0.y + 3.0f;
+    // 5. Authentic Window Control Buttons from UI Theme.png
+    float btn_sz = 21.0f;
+    float btns_start_x = p1.x - 76.0f;
+    float btn_y = p0.y + 4.0f;
 
     // Minimize
-    ImGui::SetCursorScreenPos(ImVec2(btns_start_x, btn_y));
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.44f, 0.91f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-    if (ImGui::Button("_##min", ImVec2(btn_w, btn_h))) {
+    ImVec2 min_p0(btns_start_x, btn_y);
+    ImVec2 min_p1(min_p0.x + btn_sz, min_p0.y + btn_sz);
+    ImGui::SetCursorScreenPos(min_p0);
+    if (ImGui::InvisibleButton("##min_btn", ImVec2(btn_sz, btn_sz))) {
         app.is_minimized = true;
     }
-    ImGui::PopStyleColor(2);
+    bool min_hover = ImGui::IsItemHovered();
+    if (g_pThemeTextureView) {
+        ImVec2 uv0(374.0f / 1024.0f, 236.0f / 1024.0f);
+        ImVec2 uv1(395.0f / 1024.0f, 257.0f / 1024.0f);
+        dl->AddImage((ImTextureID)g_pThemeTextureView, min_p0, min_p1, uv0, uv1, min_hover ? IM_COL32(255, 255, 255, 255) : IM_COL32(220, 220, 220, 255));
+    } else {
+        dl->AddRectFilled(min_p0, min_p1, IM_COL32(0, 85, 234, 255), 3.0f);
+    }
 
     // Maximize
-    ImGui::SetCursorScreenPos(ImVec2(btns_start_x + 22.0f, btn_y));
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.44f, 0.91f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-    if (ImGui::Button("□##max", ImVec2(btn_w, btn_h))) {
+    ImVec2 max_p0(btns_start_x + 24.0f, btn_y);
+    ImVec2 max_p1(max_p0.x + btn_sz, max_p0.y + btn_sz);
+    ImGui::SetCursorScreenPos(max_p0);
+    if (ImGui::InvisibleButton("##max_btn", ImVec2(btn_sz, btn_sz))) {
         app.is_maximized = !app.is_maximized;
     }
-    ImGui::PopStyleColor(2);
+    bool max_hover = ImGui::IsItemHovered();
+    if (g_pThemeTextureView) {
+        ImVec2 uv0(398.0f / 1024.0f, 236.0f / 1024.0f);
+        ImVec2 uv1(419.0f / 1024.0f, 257.0f / 1024.0f);
+        dl->AddImage((ImTextureID)g_pThemeTextureView, max_p0, max_p1, uv0, uv1, max_hover ? IM_COL32(255, 255, 255, 255) : IM_COL32(220, 220, 220, 255));
+    } else {
+        dl->AddRectFilled(max_p0, max_p1, IM_COL32(0, 85, 234, 255), 3.0f);
+    }
 
-    // Red Close Button
-    ImGui::SetCursorScreenPos(ImVec2(btns_start_x + 44.0f, btn_y));
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.88f, 0.20f, 0.15f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.96f, 0.35f, 0.30f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-    if (ImGui::Button("✕##cls", ImVec2(btn_w, btn_h))) {
+    // Close Button (Red)
+    ImVec2 cls_p0(btns_start_x + 50.0f, btn_y);
+    ImVec2 cls_p1(cls_p0.x + btn_sz, cls_p0.y + btn_sz);
+    ImGui::SetCursorScreenPos(cls_p0);
+    if (ImGui::InvisibleButton("##cls_btn", ImVec2(btn_sz, btn_sz))) {
         app.is_open = false;
     }
-    ImGui::PopStyleColor(3);
+    bool cls_hover = ImGui::IsItemHovered();
+    if (g_pThemeTextureView) {
+        ImVec2 uv0(448.0f / 1024.0f, 236.0f / 1024.0f);
+        ImVec2 uv1(469.0f / 1024.0f, 257.0f / 1024.0f);
+        dl->AddImage((ImTextureID)g_pThemeTextureView, cls_p0, cls_p1, uv0, uv1, cls_hover ? IM_COL32(255, 255, 255, 255) : IM_COL32(220, 220, 220, 255));
+    } else {
+        dl->AddRectFilled(cls_p0, cls_p1, IM_COL32(226, 53, 40, 255), 3.0f);
+    }
 
     ImGui::SetCursorScreenPos(ImVec2(p0.x, p0.y + height + 4.0f));
 }
@@ -1483,9 +1535,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         return 1;
     }
 
-    // Try loading authentic Bliss wallpaper from extracted assets
-    if (std::filesystem::exists("assets/winxp/WinXp/Wallpapers/Bliss.png")) {
-        LoadTextureFromFileWIC(g_pd3dDevice, L"assets/winxp/WinXp/Wallpapers/Bliss.png", &g_pBlissTextureView, &g_bliss_tex_w, &g_bliss_tex_h);
+    // 1. Authentic Windows XP Bliss Wallpaper
+    std::wstring bliss_path = ResolveAssetPath(L"assets/winxp/WinXp/Wallpapers/Bliss.png");
+    if (!bliss_path.empty()) {
+        LoadTextureFromFileWIC(g_pd3dDevice, bliss_path.c_str(), &g_pBlissTextureView, &g_bliss_tex_w, &g_bliss_tex_h);
+    }
+
+    // 2. Authentic Windows XP 32x32 Icons Atlas
+    std::wstring icons_path = ResolveAssetPath(L"assets/winxp/WinXp/Icons/WinIcons_32.png");
+    if (!icons_path.empty()) {
+        LoadTextureFromFileWIC(g_pd3dDevice, icons_path.c_str(), &g_pIconsTextureView, &g_icons_tex_w, &g_icons_tex_h);
+    }
+
+    // 3. Authentic Windows XP Luna UI Theme Spritesheet
+    std::wstring theme_path = ResolveAssetPath(L"assets/winxp/WinXp/Frame/UI Theme.png");
+    if (!theme_path.empty()) {
+        LoadTextureFromFileWIC(g_pd3dDevice, theme_path.c_str(), &g_pThemeTextureView, &g_theme_tex_w, &g_theme_tex_h);
     }
 
     ShowWindow(hWnd, nCmdShow);
@@ -1496,12 +1561,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    // Load Windows XP Tahoma font from assets if available, fallback to Consolas
-    if (std::filesystem::exists("assets/winxp/WinXp/Fonts/tahoma.ttf")) {
-        g_font_xp_small  = io.Fonts->AddFontFromFileTTF("assets/winxp/WinXp/Fonts/tahoma.ttf", 11.0f);
-        g_font_xp        = io.Fonts->AddFontFromFileTTF("assets/winxp/WinXp/Fonts/tahoma.ttf", 13.0f);
-        g_font_xp_bold   = io.Fonts->AddFontFromFileTTF("assets/winxp/WinXp/Fonts/tahoma.ttf", 14.0f);
-        g_font_xp_metric = io.Fonts->AddFontFromFileTTF("assets/winxp/WinXp/Fonts/tahoma.ttf", 22.0f);
+    // Load Windows XP Tahoma font from assets if available, fallback to system fonts
+    std::wstring font_path = ResolveAssetPath(L"assets/winxp/WinXp/Fonts/tahoma.ttf");
+    if (!font_path.empty()) {
+        std::string font_u8 = std::filesystem::path(font_path).string();
+        g_font_xp_small  = io.Fonts->AddFontFromFileTTF(font_u8.c_str(), 11.0f);
+        g_font_xp        = io.Fonts->AddFontFromFileTTF(font_u8.c_str(), 13.0f);
+        g_font_xp_bold   = io.Fonts->AddFontFromFileTTF(font_u8.c_str(), 14.0f);
+        g_font_xp_metric = io.Fonts->AddFontFromFileTTF(font_u8.c_str(), 22.0f);
     } else if (std::filesystem::exists("C:\\Windows\\Fonts\\tahoma.ttf")) {
         g_font_xp_small  = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\tahoma.ttf", 11.0f);
         g_font_xp        = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\tahoma.ttf", 13.0f);
@@ -1523,8 +1590,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     RefreshDrives();
 
     // Play classic Windows XP Startup Sound if available
-    if (std::filesystem::exists("assets/winxp/WinXp/Sounds/Windows XP Startup.wav")) {
-        PlaySoundW(L"assets/winxp/WinXp/Sounds/Windows XP Startup.wav", NULL, SND_FILENAME | SND_ASYNC);
+    std::wstring sound_path = ResolveAssetPath(L"assets/winxp/WinXp/Sounds/Windows XP Startup.wav");
+    if (!sound_path.empty()) {
+        PlaySoundW(sound_path.c_str(), NULL, SND_FILENAME | SND_ASYNC);
     }
 
     bool done = false;
@@ -1607,6 +1675,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     if (g_pBlissTextureView) {
         g_pBlissTextureView->Release();
         g_pBlissTextureView = nullptr;
+    }
+    if (g_pIconsTextureView) {
+        g_pIconsTextureView->Release();
+        g_pIconsTextureView = nullptr;
+    }
+    if (g_pThemeTextureView) {
+        g_pThemeTextureView->Release();
+        g_pThemeTextureView = nullptr;
     }
 
     ImGui_ImplDX11_Shutdown();
