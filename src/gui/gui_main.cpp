@@ -138,9 +138,7 @@ std::wstring ResolveAssetPath(const std::wstring& relativePath) {
         exeDir / relativePath,
         exeDir / L"assets" / relativePath,
         std::filesystem::current_path() / relativePath,
-        std::filesystem::current_path() / L"assets" / relativePath,
-        std::filesystem::path(L"C:\\Users\\kyryl\\.gemini\\antigravity\\scratch\\cluster_shift") / relativePath,
-        std::filesystem::path(L"C:\\Users\\kyryl\\.gemini\\antigravity\\scratch\\cluster_shift\\assets") / relativePath
+        std::filesystem::current_path() / L"assets" / relativePath
     };
 
     for (const auto& cand : candidates) {
