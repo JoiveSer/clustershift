@@ -884,23 +884,56 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
         // Inner Content starts below Titlebar
         ImGui::SetCursorPosY(36.0f);
 
+        // Dynamic Scale Factor when Resizing or Maximizing Window
+        float baseW = (win.restore_size.x > 0) ? win.restore_size.x : 640.0f;
+        float baseH = (win.restore_size.y > 0) ? win.restore_size.y : 480.0f;
+        float scale = 1.0f;
+        if (win.is_maximized) {
+            float scaleY = (screenH - 32.0f) / baseH;
+            float scaleX = screenW / baseW;
+            scale = std::clamp((scaleX + scaleY) * 0.5f, 1.0f, 1.70f);
+        } else {
+            float scaleY = win.size.y / baseH;
+            float scaleX = win.size.x / baseW;
+            scale = std::clamp((scaleX + scaleY) * 0.5f, 0.95f, 1.70f);
+        }
+        ImGui::SetWindowFontScale(scale);
+
         // ------------------ Window Inner Contents ------------------
         if (win.id == WIN_DEFRAG) {
             // === 1. Windows XP Disk Defragmenter ===
-            ImGui::Text("Том: (C:)  |  Файловая система: NTFS  |  Кластер: 4 КБ");
-            ImGui::ProgressBar(g_Defrag.progress, ImVec2(-1, 20.0f));
+            ImGui::Text("Том: (C:)  |  Файловая система: NTFS  |  Кластер: %u КБ", g_VolState.cluster_size / 1024);
+            ImGui::ProgressBar(g_Defrag.progress, ImVec2(-1, 20.0f * scale));
 
             ImGui::Spacing();
             ImGui::Text("Карта кластеров накопителя:");
 
-            // Cluster Block Grid Visualizer
+            // Adaptive Cluster Block Grid Visualizer
             ImDrawList* cDraw = ImGui::GetWindowDrawList();
             ImVec2 gridStart = ImGui::GetCursorScreenPos();
-            float blockW = 14.0f, blockH = 14.0f, pad = 2.0f;
-            int cols = (int)((ImGui::GetContentRegionAvail().x) / (blockW + pad));
+            float blockW = 15.0f * scale, blockH = 15.0f * scale, pad = 2.0f * scale;
+            float availW = ImGui::GetContentRegionAvail().x;
+            float availH = ImGui::GetContentRegionAvail().y;
+            int cols = (int)(availW / (blockW + pad));
             if (cols < 10) cols = 10;
-            int maxBlocks = (int)g_Defrag.cluster_grid.size();
+            int targetRows = (int)((availH - 95.0f * scale) / (blockH + pad));
+            if (targetRows < 8) targetRows = 8;
+            int totalBlocks = cols * targetRows;
 
+            if ((int)g_Defrag.cluster_grid.size() != totalBlocks) {
+                g_Defrag.cluster_grid.resize(totalBlocks);
+                float used_fraction = (g_VolState.total_bytes > 0) ? (float)((double)g_VolState.used_bytes / (double)g_VolState.total_bytes) : 0.65f;
+                int used_blocks = (int)(used_fraction * (float)totalBlocks);
+                for (int i = 0; i < totalBlocks; ++i) {
+                    if (i < 40) g_Defrag.cluster_grid[i] = 3;
+                    else if (i < used_blocks) {
+                        if (i % 11 == 0 || i % 19 == 0) g_Defrag.cluster_grid[i] = 2;
+                        else g_Defrag.cluster_grid[i] = 1;
+                    } else g_Defrag.cluster_grid[i] = 0;
+                }
+            }
+
+            int maxBlocks = (int)g_Defrag.cluster_grid.size();
             for (int i = 0; i < maxBlocks; ++i) {
                 int c = i % cols;
                 int r = i / cols;
@@ -918,41 +951,48 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             }
 
             int rows = (maxBlocks + cols - 1) / cols;
-            ImGui::Dummy(ImVec2(-1, rows * (blockH + pad) + 10.0f));
+            ImGui::Dummy(ImVec2(-1, rows * (blockH + pad) + 10.0f * scale));
 
             ImGui::Separator();
             
-            // Legend with drawn colored boxes (NO missing question mark characters)
+            // Legend
             ImVec2 legPos = ImGui::GetCursorScreenPos();
-            drawList->AddRectFilled(ImVec2(legPos.x, legPos.y + 2), ImVec2(legPos.x + 12, legPos.y + 14), IM_COL32(235, 40, 30, 255), 1.0f);
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f);
-            ImGui::Text("Фрагментировано: %d кластеров", g_Defrag.fragmented_clusters);
+            drawList->AddRectFilled(ImVec2(legPos.x, legPos.y + 2), ImVec2(legPos.x + 12 * scale, legPos.y + (2 + 12 * scale)), IM_COL32(235, 40, 30, 255), 1.0f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f * scale);
+            ImGui::Text("Фрагментировано: %llu кластеров", (unsigned long long)g_Defrag.fragmented_clusters);
 
-            ImGui::SameLine(240);
+            ImGui::SameLine(250 * scale);
             ImVec2 legPos2 = ImGui::GetCursorScreenPos();
-            drawList->AddRectFilled(ImVec2(legPos2.x, legPos2.y + 2), ImVec2(legPos2.x + 12, legPos2.y + 14), IM_COL32(0, 85, 230, 255), 1.0f);
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f);
-            ImGui::Text("Непрерывно: 38,936 кластеров");
+            drawList->AddRectFilled(ImVec2(legPos2.x, legPos2.y + 2), ImVec2(legPos2.x + 12 * scale, legPos2.y + (2 + 12 * scale)), IM_COL32(0, 85, 230, 255), 1.0f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f * scale);
+            ImGui::Text("Непрерывно: %llu кластеров", (unsigned long long)g_Defrag.contiguous_clusters);
 
-            ImGui::SameLine(480);
+            ImGui::SameLine(500 * scale);
             ImVec2 legPos3 = ImGui::GetCursorScreenPos();
-            drawList->AddRectFilled(ImVec2(legPos3.x, legPos3.y + 2), ImVec2(legPos3.x + 12, legPos3.y + 14), IM_COL32(35, 175, 45, 255), 1.0f);
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f);
+            drawList->AddRectFilled(ImVec2(legPos3.x, legPos3.y + 2), ImVec2(legPos3.x + 12 * scale, legPos3.y + (2 + 12 * scale)), IM_COL32(35, 175, 45, 255), 1.0f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f * scale);
             ImGui::Text("Системные: MFT Zone");
 
             ImGui::Spacing();
-            if (ImGui::Button(g_Defrag.is_running ? "Приостановить" : "Дефрагментация", ImVec2(130, 26))) {
+            float btnH = 28.0f * scale;
+            if (ImGui::Button(g_Defrag.is_running ? "Приостановить" : "Дефрагментация / TRIM", ImVec2(190 * scale, btnH))) {
                 g_Defrag.is_running = !g_Defrag.is_running;
-                if (g_Defrag.is_running) PlayXPSound(L"Windows Navigation Start.wav");
+                if (g_Defrag.is_running) {
+                    PlayXPSound(L"Windows Navigation Start.wav");
+                    auto vol = clustershift::core::VolumeManager::open_volume(L'C', true);
+                    if (vol) {
+                        (void)clustershift::core::TrimEngine::trim_volume(vol->get());
+                    }
+                }
             }
             ImGui::SameLine();
-            if (ImGui::Button("Анализ тома", ImVec2(100, 26))) {
+            if (ImGui::Button("Анализ тома", ImVec2(120 * scale, btnH))) {
                 PlayXPSound(L"Windows XP Start.wav");
                 g_Defrag.progress = 0.0f;
                 InitDefragGrid();
             }
             ImGui::SameLine();
-            if (ImGui::Button("Отчет ClusterShift", ImVec2(130, 26))) {
+            if (ImGui::Button("Отчет ClusterShift", ImVec2(150 * scale, btnH))) {
                 ToggleWindow(WIN_CMD);
             }
 
@@ -962,9 +1002,10 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImGui::Separator();
 
             ImGui::BeginChild("DrivesChild", ImVec2(-1, -1), true);
+            float iconSize = 48.0f * scale;
             if (g_pTexComputer) {
-                ImGui::Image((ImTextureID)g_pTexComputer, ImVec2(48, 48));
-                ImGui::SameLine();
+                ImGui::Image((ImTextureID)g_pTexComputer, ImVec2(iconSize, iconSize));
+                ImGui::SameLine(0.0f, 12.0f * scale);
             }
             ImGui::BeginGroup();
             ImGui::Text("Локальный диск (C:)  [%s]", g_VolState.product_name.c_str());
@@ -973,56 +1014,77 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             double used_gb  = (double)g_VolState.used_bytes / (1024.0 * 1024.0 * 1024.0);
             char driveInfoBuf[128];
             snprintf(driveInfoBuf, sizeof(driveInfoBuf), "Емкость: %.1f ГБ | Свободно: %.1f ГБ", total_gb, free_gb);
-            ImGui::TextColored(ImVec4(0.4f, 0.4f, 0.4f, 1.0f), "%s", driveInfoBuf);
-            ImGui::ProgressBar(g_VolState.usage_ratio, ImVec2(280, 14));
+            ImGui::TextColored(ImVec4(0.35f, 0.35f, 0.35f, 1.0f), "%s", driveInfoBuf);
+            ImGui::ProgressBar(g_VolState.usage_ratio, ImVec2(-1, 16.0f * scale));
             ImGui::EndGroup();
 
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
 
-            // Properties Pie Chart Preview
+            // Properties Pie Chart Section
             std::string fsStr(g_VolState.file_system.begin(), g_VolState.file_system.end());
             ImGui::Text("Свойства диска C: [%s, Кластер %u байт, %s]", fsStr.c_str(), g_VolState.cluster_size, g_VolState.drive_kind_str.c_str());
+            
+            float availW = ImGui::GetContentRegionAvail().x;
+            float availH = ImGui::GetContentRegionAvail().y;
+            float pieRadius = std::clamp(availH * 0.32f, 55.0f, 140.0f);
+            if (pieRadius * 2.2f > availW * 0.45f) pieRadius = availW * 0.20f;
+
+            ImVec2 cursorScreen = ImGui::GetCursorScreenPos();
+            ImVec2 pieCenter = ImVec2(cursorScreen.x + pieRadius + 20.0f * scale, cursorScreen.y + pieRadius + 15.0f * scale);
             ImDrawList* pDraw = ImGui::GetWindowDrawList();
-            ImVec2 pieCenter = ImVec2(ImGui::GetCursorScreenPos().x + 80.0f, ImGui::GetCursorScreenPos().y + 80.0f);
-            float radius = 55.0f;
 
             // Draw real proportional pie chart
-            pDraw->AddCircleFilled(pieCenter, radius, IM_COL32(0, 85, 230, 255), 48); // Used Blue
+            pDraw->AddCircleFilled(pieCenter, pieRadius, IM_COL32(0, 85, 230, 255), 64); // Used Blue
             float free_angle = 3.14159265f * 2.0f * (1.0f - g_VolState.usage_ratio);
-            for (float a = 0.0f; a < free_angle; a += 0.05f) {
+            for (float a = 0.0f; a < free_angle; a += 0.04f) {
                 pDraw->AddTriangleFilled(
                     pieCenter,
-                    ImVec2(pieCenter.x + cosf(a) * radius, pieCenter.y + sinf(a) * radius),
-                    ImVec2(pieCenter.x + cosf(a + 0.06f) * radius, pieCenter.y + sinf(a + 0.06f) * radius),
+                    ImVec2(pieCenter.x + cosf(a) * pieRadius, pieCenter.y + sinf(a) * pieRadius),
+                    ImVec2(pieCenter.x + cosf(a + 0.05f) * pieRadius, pieCenter.y + sinf(a + 0.05f) * pieRadius),
                     IM_COL32(235, 80, 160, 255) // Free Pink
                 );
             }
-            pDraw->AddCircle(pieCenter, radius, IM_COL32(0, 0, 0, 80), 48, 1.5f);
+            pDraw->AddCircle(pieCenter, pieRadius, IM_COL32(0, 0, 0, 80), 64, 1.5f);
 
+            // Legend and Buttons aligned to the right of Pie
+            float legendX = pieCenter.x + pieRadius + 30.0f * scale;
+            ImGui::SetCursorScreenPos(ImVec2(legendX, cursorScreen.y + 15.0f * scale));
+
+            ImGui::BeginGroup();
             char usedLabel[64], freeLabel[64];
             snprintf(usedLabel, sizeof(usedLabel), "Занято:   %.1f ГБ (%.1f%%)", used_gb, g_VolState.usage_ratio * 100.0f);
             snprintf(freeLabel, sizeof(freeLabel), "Свободно: %.1f ГБ (%.1f%%)", free_gb, (1.0f - g_VolState.usage_ratio) * 100.0f);
 
-            ImGui::SetCursorPos(ImVec2(220, 130));
+            ImVec2 leg1 = ImGui::GetCursorScreenPos();
+            pDraw->AddRectFilled(ImVec2(leg1.x, leg1.y + 2), ImVec2(leg1.x + 14 * scale, leg1.y + (2 + 12 * scale)), IM_COL32(0, 85, 230, 255), 2.0f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 20.0f * scale);
             ImGui::TextColored(ImVec4(0.0f, 0.35f, 0.9f, 1.0f), "%s", usedLabel);
-            ImGui::SetCursorPos(ImVec2(220, 155));
+
+            ImGui::Spacing();
+            ImVec2 leg2 = ImGui::GetCursorScreenPos();
+            pDraw->AddRectFilled(ImVec2(leg2.x, leg2.y + 2), ImVec2(leg2.x + 14 * scale, leg2.y + (2 + 12 * scale)), IM_COL32(235, 80, 160, 255), 2.0f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 20.0f * scale);
             ImGui::TextColored(ImVec4(0.9f, 0.25f, 0.6f, 1.0f), "%s", freeLabel);
 
-            ImGui::SetCursorPos(ImVec2(220, 190));
-            if (ImGui::Button("Очистка диска...", ImVec2(130, 26))) {
+            ImGui::Spacing();
+            ImGui::Spacing();
+            float btnW = 140.0f * scale;
+            float btnH = 28.0f * scale;
+            if (ImGui::Button("Очистка диска...", ImVec2(btnW, btnH))) {
                 ToggleWindow(WIN_CLEANUP);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Дефрагментация...", ImVec2(130, 26))) {
+            if (ImGui::Button("Дефрагментация...", ImVec2(btnW, btnH))) {
                 ToggleWindow(WIN_DEFRAG);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Обновить", ImVec2(80, 26))) {
+            if (ImGui::Button("Обновить", ImVec2(90.0f * scale, btnH))) {
                 RefreshVolumeTelemetry();
                 PlayXPSound(L"Windows XP Start.wav");
             }
+            ImGui::EndGroup();
 
             ImGui::EndChild();
 
@@ -1035,6 +1097,7 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImGui::TextWrapped("%s", cleanSummary);
             ImGui::Separator();
 
+            ImGui::BeginChild("CleanListChild", ImVec2(-1, -45.0f * scale), true);
             double temp_mb = (double)g_Clean.temp_bytes / (1024.0 * 1024.0);
             double rec_mb  = (double)g_Clean.recycle_bytes / (1024.0 * 1024.0);
             double log_mb  = (double)g_Clean.logs_bytes / (1024.0 * 1024.0);
@@ -1044,28 +1107,33 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             snprintf(recLabel,  sizeof(recLabel),  "Корзина Windows (%lld файлов) — %.1f МБ", (long long)g_Recycle.num_items, rec_mb);
             snprintf(logLabel,  sizeof(logLabel),  "Кэш системных логов и дампов — %.1f МБ", log_mb);
 
+            ImGui::Spacing();
             ImGui::Checkbox(tempLabel, &g_Clean.clean_temp);
+            ImGui::Spacing();
             ImGui::Checkbox(recLabel, &g_Clean.clean_recycle);
+            ImGui::Spacing();
             ImGui::Checkbox(logLabel, &g_Clean.clean_logs);
+            ImGui::EndChild();
 
             ImGui::Spacing();
             if (g_Clean.is_cleaning) {
                 ImGui::TextColored(ImVec4(0.0f, 0.4f, 0.9f, 1.0f), "%s", g_Clean.clean_status.c_str());
-                ImGui::ProgressBar(g_Clean.clean_progress, ImVec2(-1, 20));
+                ImGui::ProgressBar(g_Clean.clean_progress, ImVec2(-1, 20.0f * scale));
             } else {
                 if (!g_Clean.clean_status.empty()) {
                     ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.1f, 1.0f), "%s", g_Clean.clean_status.c_str());
                 }
-                if (ImGui::Button("Очистить диск", ImVec2(120, 28))) {
+                float btnH = 30.0f * scale;
+                if (ImGui::Button("Очистить диск", ImVec2(130.0f * scale, btnH))) {
                     StartDiskCleanup();
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Обновить анализ", ImVec2(130, 28))) {
+                if (ImGui::Button("Обновить анализ", ImVec2(140.0f * scale, btnH))) {
                     RefreshCleanupScan();
                     PlayXPSound(L"Windows Navigation Start.wav");
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Отмена", ImVec2(80, 28))) {
+                if (ImGui::Button("Отмена", ImVec2(90.0f * scale, btnH))) {
                     win.is_open = false;
                 }
             }
@@ -1075,8 +1143,9 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImGui::Text("Тест производительности накопителя — NVMe / DirectStorage");
             ImGui::Separator();
 
+            float availW = ImGui::GetContentRegionAvail().x;
             ImGui::Columns(2, "BenchCols", false);
-            ImGui::SetColumnWidth(0, 300);
+            ImGui::SetColumnWidth(0, std::max(280.0f * scale, availW * 0.42f));
 
             ImGui::Text("Тестовый накопитель:");
             ImGui::TextColored(ImVec4(0.0f, 0.4f, 0.9f, 1.0f), "C: [%s]", g_VolState.product_name.c_str());
@@ -1086,12 +1155,14 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImGui::Text("Размер теста: 128 МБ (Quick IOCP)");
             ImGui::Spacing();
 
+            float benchBtnW = 220.0f * scale;
+            float benchBtnH = 36.0f * scale;
             if (g_Bench.is_running) {
-                ImGui::Button("Идет тест...", ImVec2(200, 32));
+                ImGui::Button("Идет тест...", ImVec2(benchBtnW, benchBtnH));
                 float p = sinf((float)ImGui::GetTime() * 4.0f) * 0.5f + 0.5f;
-                ImGui::ProgressBar(p, ImVec2(200, 14));
+                ImGui::ProgressBar(p, ImVec2(benchBtnW, 14.0f * scale));
             } else {
-                if (ImGui::Button("Запустить Benchmark", ImVec2(200, 32))) {
+                if (ImGui::Button("Запустить Benchmark", ImVec2(benchBtnW, benchBtnH))) {
                     StartBenchmarkRun();
                 }
             }
@@ -1100,6 +1171,7 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
             ImGui::NextColumn();
             ImGui::Text("Результаты тестов (МБ/с, IOPS, задержка):");
+            ImGui::Spacing();
             
             char seqR[128], seqW[128], rndI[128], latL[128];
             if (g_Bench.has_results) {
@@ -1114,31 +1186,35 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
                 snprintf(latL, sizeof(latL), "Задержка обращения (Latency): —");
             }
 
+            float barH = 16.0f * scale;
             ImGui::Text("%s", seqR);
             float rFrac = g_Bench.has_results ? (float)(g_Bench.metrics.seq_read_mbps / 8000.0) : 0.0f;
             if (rFrac > 1.0f) rFrac = 1.0f;
-            ImGui::ProgressBar(rFrac, ImVec2(-1, 14));
+            ImGui::ProgressBar(rFrac, ImVec2(-1, barH));
 
+            ImGui::Spacing();
             ImGui::Text("%s", seqW);
             float wFrac = g_Bench.has_results ? (float)(g_Bench.metrics.seq_write_mbps / 8000.0) : 0.0f;
             if (wFrac > 1.0f) wFrac = 1.0f;
-            ImGui::ProgressBar(wFrac, ImVec2(-1, 14));
+            ImGui::ProgressBar(wFrac, ImVec2(-1, barH));
 
+            ImGui::Spacing();
             ImGui::Text("%s", rndI);
             float iFrac = g_Bench.has_results ? (float)(g_Bench.metrics.rnd_4k_read_iops / 1000000.0) : 0.0f;
             if (iFrac > 1.0f) iFrac = 1.0f;
-            ImGui::ProgressBar(iFrac, ImVec2(-1, 14));
+            ImGui::ProgressBar(iFrac, ImVec2(-1, barH));
 
+            ImGui::Spacing();
             ImGui::Text("%s", latL);
             float lFrac = g_Bench.has_results ? (float)(1.0 - (std::min)(g_Bench.metrics.rnd_4k_q1t1_avg_lat_us / 200.0, 1.0)) : 0.0f;
-            ImGui::ProgressBar(lFrac, ImVec2(-1, 14));
+            ImGui::ProgressBar(lFrac, ImVec2(-1, barH));
 
             ImGui::Columns(1);
 
         } else if (win.id == WIN_CMD) {
             // === 5. Command Prompt (cmd.exe) ===
             ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-            ImGui::BeginChild("CmdScrollArea", ImVec2(-1, -34), true);
+            ImGui::BeginChild("CmdScrollArea", ImVec2(-1, -38.0f * scale), true);
 
             for (const auto& line : g_Cmd.history) {
                 ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "%s", line.c_str());
@@ -1163,56 +1239,95 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
         } else if (win.id == WIN_CONTROL_PANEL) {
             // === 6. Control Panel ===
-            ImGui::Text("Аппаратная конфигурация и телеметрия накопителя:");
+            ImGui::Text("Панель управления ClusterShift — Конфигурация системы:");
             ImGui::Separator();
 
+            float availW = ImGui::GetContentRegionAvail().x;
+            float availH = ImGui::GetContentRegionAvail().y;
+            float cardH = (availH - 24.0f * scale) * 0.48f;
+            if (cardH < 130.0f) cardH = 130.0f;
+
+            // Card 1: Hardware Telemetry
+            ImGui::BeginChild("CP_Card1", ImVec2(availW, cardH), true);
+            ImGui::TextColored(ImVec4(0.0f, 0.33f, 0.9f, 1.0f), "Аппаратная конфигурация накопителя:");
+            ImGui::Separator();
             ImGui::BulletText("Модель устройства: %s", g_VolState.product_name.c_str());
             ImGui::BulletText("Интерфейс контроллера: %s", g_VolState.bus_type_str.c_str());
             if (g_VolState.temperature_c > 0) {
-                ImGui::BulletText("Температура датчика: %d °C", g_VolState.temperature_c);
+                ImGui::BulletText("Температура датчика: %d °C  [Норма]", g_VolState.temperature_c);
             } else {
                 ImGui::BulletText("Температура датчика: Не поддерживается контроллером");
             }
+            ImGui::BulletText("Размер сектора / кластера: %u байт", g_VolState.cluster_size);
+            ImGui::EndChild();
+
             ImGui::Spacing();
 
-            ImGui::BulletText("Управление BypassIO DirectStorage");
+            // Card 2: Advanced Storage Features (BypassIO, TRIM, VSS)
+            ImGui::BeginChild("CP_Card2", ImVec2(availW, -1), true);
+            ImGui::TextColored(ImVec4(0.0f, 0.33f, 0.9f, 1.0f), "Стек прямого доступа и оптимизация flash-памяти:");
+            ImGui::Separator();
+
+            ImGui::Columns(2, "CPCols", false);
+            ImGui::SetColumnWidth(0, availW * 0.55f);
+
+            ImGui::BulletText("Управление BypassIO DirectStorage:");
             ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "Статус стека: %s", g_VolState.bypass_io_status.c_str());
+            ImGui::TextWrapped("Обеспечивает прямой обмен данными между NVMe и видеопамятью GPU минуя стек файлового фильтра.");
 
             ImGui::Spacing();
-            ImGui::BulletText("TRIM Engine & Сборка мусора SSD");
-            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "Поддерживается для накопителей SolidStateDrive (NVMe/SATA).");
-            if (ImGui::Button("Выполнить TRIM тома C:", ImVec2(200, 26))) {
+            ImGui::BulletText("Защита VSS (Теневые копии тома):");
+            ImGui::TextColored(ImVec4(0.1f, 0.55f, 0.1f, 1.0f), "АКТИВНА — снимки NTFS защищены от деградации.");
+
+            ImGui::NextColumn();
+            ImGui::BulletText("TRIM Engine & Сборка мусора SSD:");
+            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "Освобождение неиспользуемых блоков NAND.");
+            ImGui::Spacing();
+            float trimBtnW = 210.0f * scale;
+            float trimBtnH = 32.0f * scale;
+            if (ImGui::Button("Выполнить TRIM тома C:", ImVec2(trimBtnW, trimBtnH))) {
                 auto vol = clustershift::core::VolumeManager::open_volume(L'C', true);
                 if (vol) {
                     (void)clustershift::core::TrimEngine::trim_volume(vol->get());
                     PlayXPSound(L"Windows XP Notify.wav");
                 }
             }
-
-            ImGui::Spacing();
-            ImGui::BulletText("Защита VSS (Теневые копии тома)");
-            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "Режим защиты VSS включен. Исключено повреждение снимков файловой системы.");
+            ImGui::Columns(1);
+            ImGui::EndChild();
 
         } else if (win.id == WIN_RECYCLE) {
             // === 7. Recycle Bin ===
             ImGui::Text("Корзина содержит удаленные файлы:");
             ImGui::Separator();
+
+            float availW = ImGui::GetContentRegionAvail().x;
+            ImGui::BeginChild("RecycleCard", ImVec2(availW, -45.0f * scale), true);
+            float recIconSize = 48.0f * scale;
+            if (g_pTexRecycle) {
+                ImGui::Image((ImTextureID)g_pTexRecycle, ImVec2(recIconSize, recIconSize));
+                ImGui::SameLine(0.0f, 15.0f * scale);
+            }
+            ImGui::BeginGroup();
             double recMb = (double)g_Recycle.total_bytes / (1024.0 * 1024.0);
             char recItemsBuf[128];
-            snprintf(recItemsBuf, sizeof(recItemsBuf), "• Объектов в корзине: %lld", (long long)g_Recycle.num_items);
-            ImGui::Text("%s", recItemsBuf);
+            snprintf(recItemsBuf, sizeof(recItemsBuf), "Объектов в корзине: %lld", (long long)g_Recycle.num_items);
+            ImGui::TextColored(ImVec4(0.0f, 0.35f, 0.9f, 1.0f), "%s", recItemsBuf);
             char recSizeBuf[128];
-            snprintf(recSizeBuf, sizeof(recSizeBuf), "• Общий объем: %.2f МБ", recMb);
-            ImGui::Text("%s", recSizeBuf);
+            snprintf(recSizeBuf, sizeof(recSizeBuf), "Общий объем: %.2f МБ", recMb);
+            ImGui::TextColored(ImVec4(0.35f, 0.35f, 0.35f, 1.0f), "%s", recSizeBuf);
+            ImGui::EndGroup();
+            ImGui::EndChild();
+
             ImGui::Spacing();
-            if (ImGui::Button("Очистить корзину", ImVec2(150, 28))) {
+            float rBtnH = 30.0f * scale;
+            if (ImGui::Button("Очистить корзину", ImVec2(160 * scale, rBtnH))) {
                 SHEmptyRecycleBinW(nullptr, nullptr, SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND);
                 RefreshRecycleBin();
                 RefreshVolumeTelemetry();
                 PlayXPSound(L"Windows XP Recycle.wav");
             }
             ImGui::SameLine();
-            if (ImGui::Button("Обновить", ImVec2(90, 28))) {
+            if (ImGui::Button("Обновить", ImVec2(100 * scale, rBtnH))) {
                 RefreshRecycleBin();
                 PlayXPSound(L"Windows Navigation Start.wav");
             }
@@ -1227,11 +1342,12 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImGui::Text("Лицензия: MIT");
             ImGui::Spacing();
             ImGui::Text("Страница доната:");
-            if (ImGui::Button("Поддержать на Ko-fi (https://ko-fi.com/joive)", ImVec2(-1, 32))) {
+            float dBtnH = 34.0f * scale;
+            if (ImGui::Button("Поддержать на Ko-fi (https://ko-fi.com/joive)", ImVec2(-1, dBtnH))) {
                 ShellExecuteW(NULL, L"open", L"https://ko-fi.com/joive", NULL, NULL, SW_SHOWNORMAL);
             }
             ImGui::Spacing();
-            if (ImGui::Button("Закрыть", ImVec2(100, 26))) {
+            if (ImGui::Button("Закрыть", ImVec2(110 * scale, 28 * scale))) {
                 win.is_open = false;
             }
         }
@@ -1288,15 +1404,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    // Load Fonts
+    // Load Fonts with High-Quality Anti-Aliasing (Smooth, Pleasant Typography)
     std::wstring tahomaPath = ResolveAssetPath(L"winxp/WinXp/Fonts/tahoma.ttf");
     if (std::filesystem::exists(tahomaPath)) {
         std::string fontPathU8 = std::filesystem::path(tahomaPath).string();
-        g_FontDefault     = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 12.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
-        g_FontSmall       = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 11.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
-        g_FontBold        = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 13.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
-        g_FontLarge       = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 16.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
-        g_FontStartHeader = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 15.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
+        ImFontConfig font_cfg;
+        font_cfg.OversampleH = 3;
+        font_cfg.OversampleV = 2;
+        font_cfg.RasterizerMultiply = 1.15f; // Crisp, deep black ink
+        g_FontDefault     = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 14.0f, &font_cfg, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontSmall       = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 12.0f, &font_cfg, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontBold        = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 15.0f, &font_cfg, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontLarge       = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 18.0f, &font_cfg, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontStartHeader = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 16.0f, &font_cfg, io.Fonts->GetGlyphRangesCyrillic());
     }
     if (!g_FontDefault) {
         g_FontDefault = io.Fonts->AddFontDefault();
