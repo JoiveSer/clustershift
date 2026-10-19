@@ -1,0 +1,6 @@
+# GitHub Linguist configuration
+# Hide build helper scripts and third-party libraries so repository shows 100% C++
+scripts/** linguist-vendored
+*.bat linguist-vendored
+third_party/** linguist-vendored
+assets/** linguist-vendored
