@@ -12,6 +12,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Architect](https://img.shields.io/badge/Architect-JoiveSer-cyan)](https://github.com/JoiveSer)
 
+<p align="center">
+  <b>English</b> | <a href="README_RU.md">Русский</a>
+</p>
+
 <br/>
 
 ```
@@ -122,7 +126,9 @@ clustershift optimize "D:\VirtualMachine.vhdx" --dry-run
 
 ## 📊 Live Terminal Output Examples
 
-### 1. Unbuffered Multi-Threaded IOCP Storage Benchmark (`bench`)
+<details open>
+<summary><b>1. Unbuffered Multi-Threaded IOCP Storage Benchmark (<code>bench</code>)</b></summary>
+
 ```text
 +--------------------------------------------------------------------------------+
 |                 ClusterShift Hardware Storage Benchmark Results                |
@@ -140,8 +146,11 @@ clustershift optimize "D:\VirtualMachine.vhdx" --dry-run
   Total Duration:  1.14 seconds
 +--------------------------------------------------------------------------------+
 ```
+</details>
 
-### 2. Storage Controller, S.M.A.R.T. & DirectStorage BypassIO Telemetry (`health`)
+<details>
+<summary><b>2. Storage Controller, S.M.A.R.T. & DirectStorage BypassIO Telemetry (<code>health</code>)</b></summary>
+
 ```text
 === Storage Controller & S.M.A.R.T. Health ===
   Interface Bus:   NVMe (PCIe Express)
@@ -152,8 +161,11 @@ clustershift optimize "D:\VirtualMachine.vhdx" --dry-run
   Thermal Sensor:  39 °C (Normal)
   DirectStorage:   [BYPASS_IO OPTIMAL - Hardware GPU Asset Streaming Ready]
 ```
+</details>
 
-### 3. High-Speed Space-Hog Analysis (`hogs`)
+<details>
+<summary><b>3. High-Speed Space-Hog Analysis (<code>hogs</code>)</b></summary>
+
 ```text
 === Space-Hog Analysis: C:\Users\Joive\ ===
   Scanned: 142,500 files across 18,200 directories in 0.85s
@@ -169,6 +181,7 @@ clustershift optimize "D:\VirtualMachine.vhdx" --dry-run
   2. [  35.10 GB ]  C:\Users\Joive\AppData
   3. [  24.50 GB ]  C:\Users\Joive\Downloads
 ```
+</details>
 
 ---
 
@@ -248,7 +261,7 @@ cmake --build build --config Release
 
 ---
 
-## ☕ Support
+## ☕ Support & Donations
 
-Поддержать разработку проекта ClusterShift:  
-👉 **[Купить кофе на Ko-fi (https://ko-fi.com/joive)](https://ko-fi.com/joive)**
+If you find **ClusterShift** helpful, consider supporting future development:  
+👉 **[Support on Ko-fi (https://ko-fi.com/joive)](https://ko-fi.com/joive)**
