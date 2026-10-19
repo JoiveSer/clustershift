@@ -243,4 +243,12 @@ cmake --build build --config Release
 ## 📜 License & Author
 
 * **Architect & Lead Developer:** **Joive** ([@JoiveSer](https://github.com/JoiveSer))
+* **Ko-fi:** [https://ko-fi.com/joive](https://ko-fi.com/joive)
 * **License:** Released under the permissive [MIT License](LICENSE).
+
+---
+
+## ☕ Support
+
+Поддержать разработку проекта ClusterShift:  
+👉 **[Купить кофе на Ko-fi (https://ko-fi.com/joive)](https://ko-fi.com/joive)**

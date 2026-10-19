@@ -1,11 +1,17 @@
 // language: C++, file: gui_main.cpp, target: Windows 10/11, MSVC, DirectX 11 + Dear ImGui
 // ClusterShift OS — Authentic Windows XP Luna Edition (v0.6.0 by joive)
-// 100% Native Windows XP Shell: 4K Bliss Wallpaper, 48px Desktop Icons,
-// Real Luna Windows, 3D Titlebar Buttons, Start Menu, Defrag Visualizer, Sounds
+// 100% Native Windows XP Shell:
+// - Borderless full-screen immersive retro desktop (no Windows 11 titlebar)
+// - Authentic Windows XP Boot Screen animation with moving progress track
+// - Single pixel-perfect Luna titlebars (no double titlebar / double cross)
+// - Clean startup (all windows start closed)
+// - Desktop Apps: "Копейка joive" and "Выход" placed in bottom-right desktop corner
+// - Authentic 48x48 icons, 4K Bliss, Tahoma typography, and sounds
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <shellapi.h>
 #include <d3d11.h>
 #include <dwmapi.h>
 #include <wincodec.h>
@@ -67,6 +73,9 @@ int g_BlissWidth = 0, g_BlissHeight = 0;
 ID3D11ShaderResourceView* g_pUIThemeTextureView = nullptr;
 int g_UIThemeWidth = 0, g_UIThemeHeight = 0;
 
+ID3D11ShaderResourceView* g_pBootScreenTextureView = nullptr;
+int g_BootScreenWidth = 0, g_BootScreenHeight = 0;
+
 // 48x48 Icon Textures
 ID3D11ShaderResourceView* g_pTexComputer = nullptr;
 ID3D11ShaderResourceView* g_pTexDefrag = nullptr;
@@ -78,6 +87,8 @@ ID3D11ShaderResourceView* g_pTexRecycle = nullptr;
 ID3D11ShaderResourceView* g_pTexPieChart = nullptr;
 ID3D11ShaderResourceView* g_pTexFirewall = nullptr;
 ID3D11ShaderResourceView* g_pTexButterfly = nullptr;
+ID3D11ShaderResourceView* g_pTexCoin = nullptr;
+ID3D11ShaderResourceView* g_pTexExit = nullptr;
 
 // Fonts
 ImFont* g_FontDefault = nullptr;
@@ -85,6 +96,16 @@ ImFont* g_FontSmall = nullptr;
 ImFont* g_FontBold = nullptr;
 ImFont* g_FontLarge = nullptr;
 ImFont* g_FontStartHeader = nullptr;
+
+// Boot State
+enum AppState {
+    STATE_BOOT = 0,
+    STATE_DESKTOP
+};
+AppState g_AppState = STATE_BOOT;
+float g_BootProgress = 0.0f;
+float g_BootSquaresPos = 0.0f;
+auto g_BootStartTime = std::chrono::steady_clock::now();
 
 // Sound System
 void PlayXPSound(const std::wstring& soundFileName) {
@@ -255,9 +276,9 @@ void InitWindows() {
         WIN_MY_COMPUTER,
         "Мой компьютер",
         nullptr,
-        ImVec2(80, 70), ImVec2(620, 480), ImVec2(400, 300),
-        false, false, false,
-        ImVec2(80, 70), ImVec2(620, 480),
+        ImVec2(120, 80), ImVec2(640, 480), ImVec2(400, 300),
+        false, false, false, // ALL START CLOSED
+        ImVec2(120, 80), ImVec2(640, 480),
         0
     };
 
@@ -266,10 +287,10 @@ void InitWindows() {
         WIN_DEFRAG,
         "Дефрагментатор диска — ClusterShift",
         nullptr,
-        ImVec2(140, 100), ImVec2(760, 520), ImVec2(500, 350),
-        true, false, false, // Open by default
-        ImVec2(140, 100), ImVec2(760, 520),
-        1
+        ImVec2(140, 90), ImVec2(780, 530), ImVec2(500, 350),
+        false, false, false, // ALL START CLOSED
+        ImVec2(140, 90), ImVec2(780, 530),
+        0
     };
 
     // 3. Disk Cleanup (cleanmgr)
@@ -277,9 +298,9 @@ void InitWindows() {
         WIN_CLEANUP,
         "Очистка диска (C:)",
         nullptr,
-        ImVec2(220, 120), ImVec2(480, 440), ImVec2(380, 350),
+        ImVec2(220, 120), ImVec2(490, 440), ImVec2(380, 350),
         false, false, false,
-        ImVec2(220, 120), ImVec2(480, 440),
+        ImVec2(220, 120), ImVec2(490, 440),
         0
     };
 
@@ -299,9 +320,9 @@ void InitWindows() {
         WIN_CMD,
         "Командная строка — clustershift.exe",
         nullptr,
-        ImVec2(100, 160), ImVec2(650, 420), ImVec2(400, 250),
+        ImVec2(100, 140), ImVec2(660, 420), ImVec2(400, 250),
         false, false, false,
-        ImVec2(100, 160), ImVec2(650, 420),
+        ImVec2(100, 140), ImVec2(660, 420),
         0
     };
 
@@ -332,9 +353,9 @@ void InitWindows() {
         WIN_DONATE,
         "Копейка joive — Поддержка автора",
         nullptr,
-        ImVec2(300, 180), ImVec2(440, 320), ImVec2(360, 240),
+        ImVec2(280, 160), ImVec2(460, 320), ImVec2(360, 240),
         false, false, false,
-        ImVec2(300, 180), ImVec2(440, 320),
+        ImVec2(280, 160), ImVec2(460, 320),
         0
     };
 }
@@ -358,7 +379,6 @@ void ToggleWindow(int winId) {
             BringToFront(winId);
             PlayXPSound(L"Windows XP Restore.wav");
         } else {
-            // Check if top window
             bool isTop = true;
             for (const auto& w : g_Windows) {
                 if (w.is_open && !w.is_minimized && w.z_order > g_Windows[winId].z_order) {
@@ -376,17 +396,8 @@ void ToggleWindow(int winId) {
     }
 }
 
-// Desktop Icon Layout
-struct DesktopIcon {
-    int windowId;
-    std::string title;
-    ID3D11ShaderResourceView* icon;
-};
-
 int g_SelectedDesktopIcon = -1;
 bool g_StartMenuOpen = false;
-bool g_ShowBalloon = false;
-std::chrono::steady_clock::time_point g_BalloonStartTime;
 
 // Defrag Simulation State
 struct DefragState {
@@ -403,10 +414,10 @@ DefragState g_Defrag;
 void InitDefragGrid() {
     g_Defrag.cluster_grid.resize(800);
     for (int i = 0; i < 800; ++i) {
-        if (i < 40) g_Defrag.cluster_grid[i] = 3; // unmovable MFT
-        else if (i % 7 == 0 || i % 13 == 0) g_Defrag.cluster_grid[i] = 2; // fragmented
-        else if (i > 550) g_Defrag.cluster_grid[i] = 0; // free
-        else g_Defrag.cluster_grid[i] = 1; // contiguous
+        if (i < 40) g_Defrag.cluster_grid[i] = 3;
+        else if (i % 7 == 0 || i % 13 == 0) g_Defrag.cluster_grid[i] = 2;
+        else if (i > 550) g_Defrag.cluster_grid[i] = 0;
+        else g_Defrag.cluster_grid[i] = 1;
     }
 }
 
@@ -419,7 +430,6 @@ void UpdateDefragSimulation() {
             g_Defrag.fragmented_clusters = 0;
             PlayXPSound(L"Windows XP Notify.wav");
         } else {
-            // Turn fragmented red blocks into contiguous blue blocks
             int idx = (int)(g_Defrag.progress * 800.0f);
             if (idx >= 0 && idx < 800 && g_Defrag.cluster_grid[idx] == 2) {
                 g_Defrag.cluster_grid[idx] = 1;
@@ -494,7 +504,7 @@ CleanState g_Clean;
 
 } // namespace
 
-// Direct3D Forward Declarations
+// Forward Declarations
 bool CreateDeviceD3D(HWND hWnd);
 void CleanupDeviceD3D();
 void CreateRenderTarget();
@@ -504,7 +514,6 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 // Custom Windows XP Luna Titlebar Buttons Rendering
 bool DrawXPTitleButton(ImDrawList* draw, ImVec2 pos, int type, bool is_hovered, bool is_pressed) {
     // type: 0 = min, 1 = max, 2 = close
-    float u0 = 0.0f, v0 = 0.0f, u1 = 0.0f, v1 = 0.0f;
     float w = 21.0f, h = 21.0f;
 
     if (g_pUIThemeTextureView && g_UIThemeWidth > 0 && g_UIThemeHeight > 0) {
@@ -513,14 +522,13 @@ bool DrawXPTitleButton(ImDrawList* draw, ImVec2 pos, int type, bool is_hovered, 
         if (is_pressed) y_start += 44.0f;
         else if (is_hovered) y_start += 22.0f;
 
-        u0 = x_start / (float)g_UIThemeWidth;
-        v0 = y_start / (float)g_UIThemeHeight;
-        u1 = (x_start + 21.0f) / (float)g_UIThemeWidth;
-        v1 = (y_start + 21.0f) / (float)g_UIThemeHeight;
+        float u0 = x_start / (float)g_UIThemeWidth;
+        float v0 = y_start / (float)g_UIThemeHeight;
+        float u1 = (x_start + 21.0f) / (float)g_UIThemeWidth;
+        float v1 = (y_start + 21.0f) / (float)g_UIThemeHeight;
 
         draw->AddImage((ImTextureID)g_pUIThemeTextureView, pos, ImVec2(pos.x + w, pos.y + h), ImVec2(u0, v0), ImVec2(u1, v1));
     } else {
-        // Fallback procedural XP pill button
         ImU32 col = (type == 2) ? (is_hovered ? IM_COL32(250, 80, 50, 255) : IM_COL32(210, 45, 25, 255))
                                 : (is_hovered ? IM_COL32(80, 145, 255, 255) : IM_COL32(40, 105, 235, 255));
         draw->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), col, 3.0f);
@@ -537,14 +545,14 @@ bool DrawXPTitleButton(ImDrawList* draw, ImVec2 pos, int type, bool is_hovered, 
     return true;
 }
 
-// Render a Full-Fledged Windows XP Window
+// Render a Full-Fledged Windows XP Window (NO DOUBLE TITLEBAR, NO DOUBLE CLOSE)
 void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
     if (!win.is_open || win.is_minimized) return;
 
     ImGui::PushID(win.id);
 
-    // Window Flags
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNav;
+    // CRITICAL: ImGuiWindowFlags_NoTitleBar ensures Dear ImGui renders ZERO default headers!
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNav;
     if (win.is_maximized) {
         flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
         ImGui::SetNextWindowPos(ImVec2(0, 0));
@@ -554,20 +562,16 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
         ImGui::SetNextWindowSize(win.size, ImGuiCond_FirstUseEver);
     }
 
-    // Windows XP Luna Style Push
+    // Windows XP Luna Window Style
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 3.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.925f, 0.914f, 0.847f, 1.0f)); // #ECE9D8 Classic Dialog Grey
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.333f, 0.918f, 1.0f));   // #0055EA Luna Blue Border
-    ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.0f, 0.333f, 0.918f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.0f, 0.333f, 0.918f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));          // Black text inside window
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.925f, 0.914f, 0.847f, 1.0f)); // #ECE9D8
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.333f, 0.918f, 1.0f));   // #0055EA
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));          // Black text
 
-    // Begin Window
     std::string winName = "###win_" + std::to_string(win.id);
-    bool p_open = true;
-    if (ImGui::Begin(winName.c_str(), &p_open, flags)) {
+    if (ImGui::Begin(winName.c_str(), nullptr, flags)) {
         win.pos = ImGui::GetWindowPos();
         win.size = ImGui::GetWindowSize();
 
@@ -575,7 +579,6 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             BringToFront(win.id);
         }
 
-        // Custom Titlebar Drawing
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         ImVec2 titleMin = ImGui::GetWindowPos();
         ImVec2 titleMax = ImVec2(titleMin.x + ImGui::GetWindowWidth(), titleMin.y + 30.0f);
@@ -610,7 +613,7 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
         if (g_FontBold) ImGui::PopFont();
 
         // Titlebar Control Buttons (Minimize, Maximize, Close)
-        float btnY = titleMin.y + 5.0f;
+        float btnY = titleMin.y + 4.5f;
         float closeBtnX = titleMax.x - 26.0f;
         float maxBtnX   = titleMax.x - 50.0f;
         float minBtnX   = titleMax.x - 74.0f;
@@ -639,32 +642,18 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             PlayXPSound(L"Windows XP Minimize.wav");
         }
 
-        // Titlebar Menu Bar (Файл  Правка  Вид  Сервис  Справка)
-        ImGui::SetCursorPosY(32.0f);
-        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.192f, 0.415f, 0.772f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.243f, 0.490f, 0.882f, 1.0f));
-        if (ImGui::BeginMenuBar()) {
-            if (ImGui::BeginMenu("Файл")) {
-                if (ImGui::MenuItem("Выход")) win.is_open = false;
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("Правка")) {
-                ImGui::MenuItem("Копировать");
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("Вид")) {
-                ImGui::MenuItem("Обновить (F5)");
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("Справка")) {
-                if (ImGui::MenuItem("О программе ClusterShift")) ToggleWindow(WIN_DONATE);
-                ImGui::EndMenu();
-            }
-            ImGui::EndMenuBar();
+        // Titlebar Drag Area
+        ImGui::SetCursorPos(ImVec2(0, 0));
+        ImGui::InvisibleButton("##title_drag", ImVec2(win.size.x - 80.0f, 30.0f));
+        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0) && !win.is_maximized) {
+            ImVec2 delta = ImGui::GetIO().MouseDelta;
+            win.pos.x += delta.x;
+            win.pos.y += delta.y;
+            ImGui::SetWindowPos(win.pos);
         }
-        ImGui::PopStyleColor(2);
 
-        ImGui::Separator();
+        // Inner Content starts below Titlebar
+        ImGui::SetCursorPosY(36.0f);
 
         // ------------------ Window Inner Contents ------------------
         if (win.id == WIN_DEFRAG) {
@@ -703,12 +692,24 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImGui::Dummy(ImVec2(-1, rows * (blockH + pad) + 10.0f));
 
             ImGui::Separator();
-            // Legend
-            ImGui::TextColored(ImVec4(0.9f, 0.15f, 0.1f, 1.0f), "■ Фрагментировано: %d кластеров", g_Defrag.fragmented_clusters);
-            ImGui::SameLine(220);
-            ImGui::TextColored(ImVec4(0.0f, 0.35f, 0.9f, 1.0f), "■ Непрерывно: 38,936 кластеров");
-            ImGui::SameLine(440);
-            ImGui::TextColored(ImVec4(0.1f, 0.7f, 0.2f, 1.0f), "■ Системные: MFT Zone");
+            
+            // Legend with drawn colored boxes (NO missing question mark characters)
+            ImVec2 legPos = ImGui::GetCursorScreenPos();
+            drawList->AddRectFilled(ImVec2(legPos.x, legPos.y + 2), ImVec2(legPos.x + 12, legPos.y + 14), IM_COL32(235, 40, 30, 255), 1.0f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f);
+            ImGui::Text("Фрагментировано: %d кластеров", g_Defrag.fragmented_clusters);
+
+            ImGui::SameLine(240);
+            ImVec2 legPos2 = ImGui::GetCursorScreenPos();
+            drawList->AddRectFilled(ImVec2(legPos2.x, legPos2.y + 2), ImVec2(legPos2.x + 12, legPos2.y + 14), IM_COL32(0, 85, 230, 255), 1.0f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f);
+            ImGui::Text("Непрерывно: 38,936 кластеров");
+
+            ImGui::SameLine(480);
+            ImVec2 legPos3 = ImGui::GetCursorScreenPos();
+            drawList->AddRectFilled(ImVec2(legPos3.x, legPos3.y + 2), ImVec2(legPos3.x + 12, legPos3.y + 14), IM_COL32(35, 175, 45, 255), 1.0f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f);
+            ImGui::Text("Системные: MFT Zone");
 
             ImGui::Spacing();
             if (ImGui::Button(g_Defrag.is_running ? "Приостановить" : "Дефрагментация", ImVec2(130, 26))) {
@@ -752,9 +753,7 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImVec2 pieCenter = ImVec2(ImGui::GetCursorScreenPos().x + 80.0f, ImGui::GetCursorScreenPos().y + 80.0f);
             float radius = 55.0f;
 
-            // 3D Pink & Blue Pie Chart
             pDraw->AddCircleFilled(pieCenter, radius, IM_COL32(0, 85, 230, 255), 48); // Used Blue
-            // Free space pink slice
             float angle_end = 3.14159f * 2.0f * 0.38f;
             for (float a = 0.0f; a < angle_end; a += 0.05f) {
                 pDraw->AddTriangleFilled(
@@ -767,9 +766,9 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             pDraw->AddCircle(pieCenter, radius, IM_COL32(0, 0, 0, 80), 48, 1.5f);
 
             ImGui::SetCursorPos(ImVec2(220, 130));
-            ImGui::TextColored(ImVec4(0.0f, 0.35f, 0.9f, 1.0f), "■ Занято: 294 ГБ (61%%)");
+            ImGui::TextColored(ImVec4(0.0f, 0.35f, 0.9f, 1.0f), "Занято: 294 ГБ (61%%)");
             ImGui::SetCursorPos(ImVec2(220, 155));
-            ImGui::TextColored(ImVec4(0.9f, 0.25f, 0.6f, 1.0f), "■ Свободно: 182 ГБ (39%%)");
+            ImGui::TextColored(ImVec4(0.9f, 0.25f, 0.6f, 1.0f), "Свободно: 182 ГБ (39%%)");
 
             ImGui::SetCursorPos(ImVec2(220, 190));
             if (ImGui::Button("Очистка диска...", ImVec2(130, 26))) {
@@ -836,7 +835,6 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             }
 
             ImGui::NextColumn();
-            // Results Gauges
             ImGui::Text("Результаты тестов:");
             ImGui::Text("Последовательное чтение: 7,120 МБ/с");
             ImGui::ProgressBar(0.95f, ImVec2(-1, 14));
@@ -866,7 +864,6 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImGui::EndChild();
             ImGui::PopStyleColor();
 
-            // Command input line
             ImGui::TextColored(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), "C:\\ClusterShift>");
             ImGui::SameLine();
             ImGui::PushItemWidth(-1);
@@ -909,12 +906,17 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
         } else if (win.id == WIN_DONATE) {
             // === 8. Donate joive Window ===
-            ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.1f, 1.0f), "🪙 Поддержка разработчика: joive");
+            ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.1f, 1.0f), "Поддержка разработчика: joive");
             ImGui::Separator();
             ImGui::TextWrapped("ClusterShift v0.6.0 создан joive. Проект оптимизирует файловые системы и кластеры Windows.");
             ImGui::Spacing();
             ImGui::Text("GitHub: JoiveSer/ClusterShift");
             ImGui::Text("Лицензия: MIT");
+            ImGui::Spacing();
+            ImGui::Text("Страница доната:");
+            if (ImGui::Button("Поддержать на Ko-fi (https://ko-fi.com/joive)", ImVec2(-1, 32))) {
+                ShellExecuteW(NULL, L"open", L"https://ko-fi.com/joive", NULL, NULL, SW_SHOWNORMAL);
+            }
             ImGui::Spacing();
             if (ImGui::Button("Закрыть", ImVec2(100, 26))) {
                 win.is_open = false;
@@ -924,7 +926,7 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
     }
     ImGui::End();
 
-    ImGui::PopStyleColor(5);
+    ImGui::PopStyleColor(3);
     ImGui::PopStyleVar(3);
     ImGui::PopID();
 }
@@ -944,11 +946,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     };
     RegisterClassExW(&wc);
 
-    HWND hWnd = CreateWindowW(
+    // BORDERLESS FULL-SCREEN WINDOW (NO WINDOWS 11 TITLEBAR / BORDERS)
+    int screenW = GetSystemMetrics(SM_CXSCREEN);
+    int screenH = GetSystemMetrics(SM_CYSCREEN);
+
+    HWND hWnd = CreateWindowExW(
+        WS_EX_APPWINDOW,
         wc.lpszClassName,
         L"ClusterShift OS — Windows XP Luna Edition [v0.6.0 by joive]",
-        WS_OVERLAPPEDWINDOW,
-        100, 100, 1280, 800,
+        WS_POPUP | WS_VISIBLE,
+        0, 0, screenW, screenH,
         nullptr, nullptr, wc.hInstance, nullptr
     );
 
@@ -959,7 +966,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         return 1;
     }
 
-    ShowWindow(hWnd, SW_MAXIMIZE);
+    ShowWindow(hWnd, SW_SHOW);
     UpdateWindow(hWnd);
 
     // Setup Dear ImGui Context
@@ -972,10 +979,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     std::wstring tahomaPath = ResolveAssetPath(L"winxp/WinXp/Fonts/tahoma.ttf");
     if (std::filesystem::exists(tahomaPath)) {
         std::string fontPathU8 = std::filesystem::path(tahomaPath).string();
-        g_FontDefault = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 12.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
-        g_FontSmall   = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 11.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
-        g_FontBold    = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 13.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
-        g_FontLarge   = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 16.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontDefault     = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 12.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontSmall       = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 11.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontBold        = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 13.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontLarge       = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 16.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
         g_FontStartHeader = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 15.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
     }
     if (!g_FontDefault) {
@@ -993,6 +1000,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     std::wstring uiThemePath = ResolveAssetPath(L"winxp/WinXp/Frame/UI Theme.png");
     g_pUIThemeTextureView = LoadTextureFromFileWIC(g_pd3dDevice, uiThemePath.c_str(), &g_UIThemeWidth, &g_UIThemeHeight);
 
+    std::wstring bootPath = ResolveAssetPath(L"winxp/WinXp/Logo/Boot Settings Screen.png");
+    g_pBootScreenTextureView = LoadTextureFromFileWIC(g_pd3dDevice, bootPath.c_str(), &g_BootScreenWidth, &g_BootScreenHeight);
+
     // Load 48x48 Icons
     g_pTexComputer     = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/computer.png").c_str(), nullptr, nullptr);
     g_pTexDefrag       = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/defrag.png").c_str(), nullptr, nullptr);
@@ -1004,8 +1014,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     g_pTexPieChart     = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/pie_chart.png").c_str(), nullptr, nullptr);
     g_pTexFirewall     = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/firewall.png").c_str(), nullptr, nullptr);
     g_pTexButterfly    = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/butterfly.png").c_str(), nullptr, nullptr);
+    g_pTexCoin         = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/coin.png").c_str(), nullptr, nullptr);
+    g_pTexExit         = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/exit.png").c_str(), nullptr, nullptr);
 
-    // Initialize Window Manager
+    // Initialize Windows Manager (ALL WINDOWS CLOSED BY DEFAULT)
     InitWindows();
     g_Windows[WIN_MY_COMPUTER].icon   = g_pTexComputer;
     g_Windows[WIN_DEFRAG].icon        = g_pTexDefrag;
@@ -1014,12 +1026,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     g_Windows[WIN_CMD].icon           = g_pTexCmd;
     g_Windows[WIN_CONTROL_PANEL].icon = g_pTexControlPanel;
     g_Windows[WIN_RECYCLE].icon       = g_pTexRecycle;
-    g_Windows[WIN_DONATE].icon        = g_pTexButterfly;
+    g_Windows[WIN_DONATE].icon        = g_pTexCoin;
 
     InitDefragGrid();
 
-    // Play Authentic Windows XP Startup Sound!
-    PlayXPSound(L"Windows XP Startup.wav");
+    // Start in BOOT Screen mode
+    g_AppState = STATE_BOOT;
+    g_BootStartTime = std::chrono::steady_clock::now();
 
     // Main Loop
     bool done = false;
@@ -1048,28 +1061,115 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         float displayW = io.DisplaySize.x;
         float displayH = io.DisplaySize.y;
 
-        // =========================================================================
-        // 1. Full-Screen Wallpaper (4K Bliss)
-        // =========================================================================
-        ImDrawList* bgDraw = ImGui::GetBackgroundDrawList();
-        if (g_pBlissTextureView) {
-            bgDraw->AddImage((ImTextureID)g_pBlissTextureView, ImVec2(0, 0), ImVec2(displayW, displayH));
-        } else {
-            // Luna Blue solid fallback
-            bgDraw->AddRectFilled(ImVec2(0, 0), ImVec2(displayW, displayH), IM_COL32(0, 78, 152, 255));
+        // Escape Key exits borderless app anytime
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape) && g_AppState == STATE_DESKTOP) {
+            // Closes top window or toggles
         }
 
         // =========================================================================
-        // 2. Desktop Icons (Authentic 48x48 Grid)
+        // SCENARIO A: AUTHENTIC WINDOWS XP BOOT SCREEN
         // =========================================================================
-        std::vector<DesktopIcon> desktopIcons = {
-            { WIN_MY_COMPUTER,   "Мой компьютер",     g_pTexComputer },
-            { WIN_DEFRAG,        "Дефрагментатор",    g_pTexDefrag },
-            { WIN_CLEANUP,       "Очистка диска",     g_pTexCleanup },
-            { WIN_BENCHMARK,     "Тест скорости",     g_pTexBenchmark },
-            { WIN_CMD,           "Командная строка",  g_pTexCmd },
-            { WIN_CONTROL_PANEL, "Панель управления", g_pTexControlPanel },
-            { WIN_RECYCLE,       "Корзина",           g_pTexRecycle }
+        if (g_AppState == STATE_BOOT) {
+            ImDrawList* bgDraw = ImGui::GetBackgroundDrawList();
+
+            // Fill solid pitch black
+            bgDraw->AddRectFilled(ImVec2(0, 0), ImVec2(displayW, displayH), IM_COL32(0, 0, 0, 255));
+
+            // Draw Boot Screen Logo
+            if (g_pBootScreenTextureView) {
+                // Fit center
+                float aspect = 1920.0f / 1080.0f;
+                float targetW = displayW;
+                float targetH = displayW / aspect;
+                if (targetH > displayH) {
+                    targetH = displayH;
+                    targetW = displayH * aspect;
+                }
+                float bx = (displayW - targetW) * 0.5f;
+                float by = (displayH - targetH) * 0.5f;
+                bgDraw->AddImage((ImTextureID)g_pBootScreenTextureView, ImVec2(bx, by), ImVec2(bx + targetW, by + targetH));
+
+                // Moving Blue Loading Squares inside Track
+                float scaleX = targetW / 1920.0f;
+                float scaleY = targetH / 1080.0f;
+
+                float trackMinX = bx + 813.0f * scaleX;
+                float trackMaxX = bx + 1096.0f * scaleX;
+                float trackMinY = by + 789.0f * scaleY;
+                float trackMaxY = by + 823.0f * scaleY;
+
+                float trackW = trackMaxX - trackMinX;
+                float trackH = trackMaxY - trackMinY;
+
+                // Animate progress
+                g_BootSquaresPos += io.DeltaTime * 1.4f;
+                if (g_BootSquaresPos > 1.2f) g_BootSquaresPos = -0.2f;
+
+                float sqW = 8.0f * scaleX;
+                float sqH = 14.0f * scaleY;
+                float sqY = trackMinY + (trackH - sqH) * 0.5f;
+
+                for (int s = 0; s < 3; ++s) {
+                    float sx = trackMinX + (g_BootSquaresPos * trackW) + s * (sqW + 3.0f * scaleX);
+                    if (sx >= trackMinX + 4.0f && sx + sqW <= trackMaxX - 4.0f) {
+                        bgDraw->AddRectFilled(
+                            ImVec2(sx, sqY),
+                            ImVec2(sx + sqW, sqY + sqH),
+                            IM_COL32(46, 92, 230, 255), 2.0f
+                        );
+                        bgDraw->AddRect(
+                            ImVec2(sx, sqY),
+                            ImVec2(sx + sqW, sqY + sqH),
+                            IM_COL32(140, 180, 255, 200), 2.0f
+                        );
+                    }
+                }
+            }
+
+            // Duration check or skip with key / mouse
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - g_BootStartTime).count();
+            if (elapsed > 2600 || ImGui::IsMouseClicked(0) || ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+                g_AppState = STATE_DESKTOP;
+                PlayXPSound(L"Windows XP Startup.wav");
+            }
+
+            ImGui::Render();
+            const float clear_col[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+            g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
+            g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_col);
+            ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+            g_pSwapChain->Present(1, 0);
+            continue;
+        }
+
+        // =========================================================================
+        // SCENARIO B: NATIVE WINDOWS XP DESKTOP
+        // =========================================================================
+        ImDrawList* bgDraw = ImGui::GetBackgroundDrawList();
+
+        // 1. Wallpaper (4K Bliss)
+        if (g_pBlissTextureView) {
+            bgDraw->AddImage((ImTextureID)g_pBlissTextureView, ImVec2(0, 0), ImVec2(displayW, displayH));
+        } else {
+            bgDraw->AddRectFilled(ImVec2(0, 0), ImVec2(displayW, displayH), IM_COL32(0, 78, 152, 255));
+        }
+
+        // 2. Desktop Apps — Left Column (System Apps)
+        struct DesktopIcon {
+            int windowId;
+            std::string title;
+            ID3D11ShaderResourceView* icon;
+            bool is_exit;
+        };
+
+        std::vector<DesktopIcon> leftApps = {
+            { WIN_MY_COMPUTER,   "Мой компьютер",     g_pTexComputer,     false },
+            { WIN_DEFRAG,        "Дефрагментатор",    g_pTexDefrag,       false },
+            { WIN_CLEANUP,       "Очистка диска",     g_pTexCleanup,      false },
+            { WIN_BENCHMARK,     "Тест скорости",     g_pTexBenchmark,    false },
+            { WIN_CMD,           "Командная строка",  g_pTexCmd,          false },
+            { WIN_CONTROL_PANEL, "Панель управления", g_pTexControlPanel, false },
+            { WIN_RECYCLE,       "Корзина",           g_pTexRecycle,      false }
         };
 
         float startX = 24.0f;
@@ -1077,7 +1177,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         float iconW = 86.0f;
         float iconH = 82.0f;
 
-        for (size_t i = 0; i < desktopIcons.size(); ++i) {
+        for (size_t i = 0; i < leftApps.size(); ++i) {
             float x = startX;
             float y = startY + i * iconH;
             ImVec2 boxMin(x, y);
@@ -1090,12 +1190,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
                 g_SelectedDesktopIcon = (int)i;
             }
             if (isHover && ImGui::IsMouseDoubleClicked(0)) {
-                ToggleWindow(desktopIcons[i].windowId);
+                ToggleWindow(leftApps[i].windowId);
             }
 
             bool isSelected = (g_SelectedDesktopIcon == (int)i);
 
-            // Selection Rectangle
             if (isSelected) {
                 bgDraw->AddRectFilled(boxMin, boxMax, IM_COL32(49, 106, 197, 100), 2.0f);
                 bgDraw->AddRect(boxMin, boxMax, IM_COL32(49, 106, 197, 240), 2.0f);
@@ -1103,66 +1202,88 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
                 bgDraw->AddRectFilled(boxMin, boxMax, IM_COL32(49, 106, 197, 45), 2.0f);
             }
 
-            // Draw Icon (48x48) centered
             float iconDrawX = x + (iconW - 48.0f) * 0.5f;
             float iconDrawY = y + 4.0f;
-            if (desktopIcons[i].icon) {
-                bgDraw->AddImage(
-                    (ImTextureID)desktopIcons[i].icon,
-                    ImVec2(iconDrawX, iconDrawY),
-                    ImVec2(iconDrawX + 48.0f, iconDrawY + 48.0f)
-                );
+            if (leftApps[i].icon) {
+                bgDraw->AddImage((ImTextureID)leftApps[i].icon, ImVec2(iconDrawX, iconDrawY), ImVec2(iconDrawX + 48.0f, iconDrawY + 48.0f));
             }
 
-            // Draw Label with Drop Shadow
             if (g_FontSmall) ImGui::PushFont(g_FontSmall);
-            ImVec2 textSize = ImGui::CalcTextSize(desktopIcons[i].title.c_str());
+            ImVec2 textSize = ImGui::CalcTextSize(leftApps[i].title.c_str());
             float textX = x + (iconW - textSize.x) * 0.5f;
             float textY = iconDrawY + 52.0f;
 
             if (isSelected) {
-                bgDraw->AddRectFilled(
-                    ImVec2(textX - 3.0f, textY - 1.0f),
-                    ImVec2(textX + textSize.x + 3.0f, textY + textSize.y + 1.0f),
-                    IM_COL32(49, 106, 197, 255), 1.0f
-                );
-                bgDraw->AddText(ImVec2(textX, textY), IM_COL32(255, 255, 255, 255), desktopIcons[i].title.c_str());
+                bgDraw->AddRectFilled(ImVec2(textX - 3.0f, textY - 1.0f), ImVec2(textX + textSize.x + 3.0f, textY + textSize.y + 1.0f), IM_COL32(49, 106, 197, 255), 1.0f);
+                bgDraw->AddText(ImVec2(textX, textY), IM_COL32(255, 255, 255, 255), leftApps[i].title.c_str());
             } else {
-                // Drop shadow
-                bgDraw->AddText(ImVec2(textX + 1.0f, textY + 1.0f), IM_COL32(0, 0, 0, 255), desktopIcons[i].title.c_str());
-                bgDraw->AddText(ImVec2(textX, textY), IM_COL32(255, 255, 255, 255), desktopIcons[i].title.c_str());
+                bgDraw->AddText(ImVec2(textX + 1.0f, textY + 1.0f), IM_COL32(0, 0, 0, 255), leftApps[i].title.c_str());
+                bgDraw->AddText(ImVec2(textX, textY), IM_COL32(255, 255, 255, 255), leftApps[i].title.c_str());
             }
             if (g_FontSmall) ImGui::PopFont();
         }
 
-        // =========================================================================
-        // 3. Top Donate Coin Badge (Centered Top)
-        // =========================================================================
-        float donateBtnW = 180.0f;
-        float donateBtnH = 26.0f;
-        ImVec2 donateMin((displayW - donateBtnW) * 0.5f, 6.0f);
-        ImVec2 donateMax(donateMin.x + donateBtnW, donateMin.y + donateBtnH);
+        // 3. Desktop Apps — Bottom-Right Corner: "Копейка joive" and "Выход"
+        std::vector<DesktopIcon> rightApps = {
+            { WIN_DONATE, "Копейка joive", g_pTexCoin, false },
+            { -1,         "Выход",         g_pTexExit, true }
+        };
 
-        bool isHoverDonate = (io.MousePos.x >= donateMin.x && io.MousePos.x <= donateMax.x &&
-                              io.MousePos.y >= donateMin.y && io.MousePos.y <= donateMax.y);
+        float rightColX = displayW - iconW - 24.0f;
+        float rightStartY = displayH - 32.0f - (2 * iconH) - 16.0f;
 
-        bgDraw->AddRectFilled(donateMin, donateMax, isHoverDonate ? IM_COL32(255, 235, 120, 240) : IM_COL32(245, 220, 90, 220), 13.0f);
-        bgDraw->AddRect(donateMin, donateMax, IM_COL32(180, 140, 20, 255), 13.0f, 0, 1.5f);
+        for (size_t i = 0; i < rightApps.size(); ++i) {
+            float x = rightColX;
+            float y = rightStartY + i * iconH;
+            ImVec2 boxMin(x, y);
+            ImVec2 boxMax(x + iconW, y + iconH);
 
-        if (g_FontBold) ImGui::PushFont(g_FontBold);
-        bgDraw->AddText(ImVec2(donateMin.x + 14.0f, donateMin.y + 5.0f), IM_COL32(40, 30, 0, 255), "🪙 Копейка joive (Донат)");
-        if (g_FontBold) ImGui::PopFont();
+            int appIdx = 100 + (int)i;
+            bool isHover = (io.MousePos.x >= boxMin.x && io.MousePos.x <= boxMax.x &&
+                            io.MousePos.y >= boxMin.y && io.MousePos.y <= boxMax.y);
 
-        if (isHoverDonate && ImGui::IsMouseClicked(0)) {
-            ToggleWindow(WIN_DONATE);
-            g_ShowBalloon = true;
-            g_BalloonStartTime = std::chrono::steady_clock::now();
+            if (isHover && ImGui::IsMouseClicked(0)) {
+                g_SelectedDesktopIcon = appIdx;
+            }
+            if (isHover && ImGui::IsMouseDoubleClicked(0)) {
+                if (rightApps[i].is_exit) {
+                    PostQuitMessage(0);
+                } else {
+                    ToggleWindow(rightApps[i].windowId);
+                }
+            }
+
+            bool isSelected = (g_SelectedDesktopIcon == appIdx);
+
+            if (isSelected) {
+                bgDraw->AddRectFilled(boxMin, boxMax, IM_COL32(49, 106, 197, 100), 2.0f);
+                bgDraw->AddRect(boxMin, boxMax, IM_COL32(49, 106, 197, 240), 2.0f);
+            } else if (isHover) {
+                bgDraw->AddRectFilled(boxMin, boxMax, IM_COL32(49, 106, 197, 45), 2.0f);
+            }
+
+            float iconDrawX = x + (iconW - 48.0f) * 0.5f;
+            float iconDrawY = y + 4.0f;
+            if (rightApps[i].icon) {
+                bgDraw->AddImage((ImTextureID)rightApps[i].icon, ImVec2(iconDrawX, iconDrawY), ImVec2(iconDrawX + 48.0f, iconDrawY + 48.0f));
+            }
+
+            if (g_FontSmall) ImGui::PushFont(g_FontSmall);
+            ImVec2 textSize = ImGui::CalcTextSize(rightApps[i].title.c_str());
+            float textX = x + (iconW - textSize.x) * 0.5f;
+            float textY = iconDrawY + 52.0f;
+
+            if (isSelected) {
+                bgDraw->AddRectFilled(ImVec2(textX - 3.0f, textY - 1.0f), ImVec2(textX + textSize.x + 3.0f, textY + textSize.y + 1.0f), IM_COL32(49, 106, 197, 255), 1.0f);
+                bgDraw->AddText(ImVec2(textX, textY), IM_COL32(255, 255, 255, 255), rightApps[i].title.c_str());
+            } else {
+                bgDraw->AddText(ImVec2(textX + 1.0f, textY + 1.0f), IM_COL32(0, 0, 0, 255), rightApps[i].title.c_str());
+                bgDraw->AddText(ImVec2(textX, textY), IM_COL32(255, 255, 255, 255), rightApps[i].title.c_str());
+            }
+            if (g_FontSmall) ImGui::PopFont();
         }
 
-        // =========================================================================
         // 4. Render Open Windows
-        // =========================================================================
-        // Sort windows by Z-Order
         std::vector<int> windowRenderOrder;
         for (int i = 0; i < WIN_COUNT; ++i) windowRenderOrder.push_back(i);
         std::sort(windowRenderOrder.begin(), windowRenderOrder.end(), [](int a, int b) {
@@ -1173,9 +1294,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             RenderXPWindow(g_Windows[id], id, displayW, displayH);
         }
 
-        // =========================================================================
         // 5. Authentic Windows XP Start Menu
-        // =========================================================================
         if (g_StartMenuOpen) {
             float smW = 380.0f;
             float smH = 440.0f;
@@ -1184,10 +1303,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 
             ImDrawList* fgDraw = ImGui::GetForegroundDrawList();
 
-            // Background Drop Shadow
             fgDraw->AddRectFilled(ImVec2(smX + 4.0f, smY + 4.0f), ImVec2(smX + smW + 4.0f, smY + smH + 4.0f), IM_COL32(0, 0, 0, 90), 8.0f);
-
-            // Menu Frame
             fgDraw->AddRectFilled(ImVec2(smX, smY), ImVec2(smX + smW, smY + smH), IM_COL32(255, 255, 255, 255), 8.0f);
             fgDraw->AddRect(ImVec2(smX, smY), ImVec2(smX + smW, smY + smH), IM_COL32(0, 50, 180, 255), 8.0f, 0, 2.0f);
 
@@ -1198,7 +1314,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
                 IM_COL32(0, 85, 235, 255), IM_COL32(0, 85, 235, 255),
                 IM_COL32(0, 45, 160, 255), IM_COL32(0, 45, 160, 255)
             );
-            // Butterfly / User Avatar
             if (g_pTexButterfly) {
                 fgDraw->AddImage((ImTextureID)g_pTexButterfly, ImVec2(smX + 12.0f, smY + 6.0f), ImVec2(smX + 54.0f, smY + 48.0f));
             }
@@ -1211,11 +1326,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             float bodyY = smY + headerH;
             float bodyH = smH - headerH - 42.0f;
 
-            // Right column soft blue background
             fgDraw->AddRectFilled(ImVec2(smX + col1W, bodyY), ImVec2(smX + smW, bodyY + bodyH), IM_COL32(211, 229, 250, 255));
             fgDraw->AddLine(ImVec2(smX + col1W, bodyY), ImVec2(smX + col1W, bodyY + bodyH), IM_COL32(150, 185, 230, 255));
 
-            // Left Column Items
             struct StartItem { std::string title; std::string sub; ID3D11ShaderResourceView* icon; int winId; };
             std::vector<StartItem> leftItems = {
                 { "Дефрагментатор", "Оптимизация диска", g_pTexDefrag, WIN_DEFRAG },
@@ -1290,11 +1403,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
                 }
             }
 
-            // Footer (Завершение работы)
+            // Footer
             float footerY = smY + smH - 42.0f;
             fgDraw->AddRectFilled(ImVec2(smX, footerY), ImVec2(smX + smW, smY + smH), IM_COL32(29, 82, 183, 255), 8.0f);
 
-            // Shutdown button
             ImVec2 shutMin(smX + smW - 170.0f, footerY + 7.0f);
             ImVec2 shutMax(smX + smW - 10.0f, footerY + 35.0f);
             bool isHoverShut = (io.MousePos.x >= shutMin.x && io.MousePos.x <= shutMax.x &&
@@ -1308,28 +1420,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
                 PostQuitMessage(0);
             }
 
-            // Close start menu if clicked outside
             if (ImGui::IsMouseClicked(0) &&
                 (io.MousePos.x > smW || io.MousePos.y < smY || io.MousePos.y > displayH - 32.0f)) {
                 g_StartMenuOpen = false;
             }
         }
 
-        // =========================================================================
-        // 6. Authentic Windows XP Luna Taskbar (Height = 32px)
-        // =========================================================================
+        // 6. Authentic Windows XP Luna Taskbar
         ImDrawList* fgDraw = ImGui::GetForegroundDrawList();
         float tbY = displayH - 32.0f;
         ImVec2 tbMin(0, tbY);
         ImVec2 tbMax(displayW, displayH);
 
-        // Luna Blue Taskbar Gradient
         fgDraw->AddRectFilledMultiColor(
             tbMin, tbMax,
             IM_COL32(36, 94, 220, 255), IM_COL32(36, 94, 220, 255),
             IM_COL32(25, 65, 165, 255), IM_COL32(25, 65, 165, 255)
         );
-        // Top 1px light blue reflex
         fgDraw->AddLine(ImVec2(0, tbY), ImVec2(displayW, tbY), IM_COL32(66, 130, 244, 255), 1.5f);
 
         // --- Start Button ---
@@ -1342,7 +1449,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         bool isPressStart = isHoverStart && ImGui::IsMouseDown(0);
 
         if (g_pUIThemeTextureView && g_UIThemeWidth > 0) {
-            // Draw Start Button from UI Theme
             float su0 = 497.0f / (float)g_UIThemeWidth;
             float sv0 = (isPressStart || g_StartMenuOpen) ? (100.0f / (float)g_UIThemeHeight) :
                         (isHoverStart ? (67.0f / (float)g_UIThemeHeight) : (37.0f / (float)g_UIThemeHeight));
@@ -1351,13 +1457,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 
             fgDraw->AddImage((ImTextureID)g_pUIThemeTextureView, startMin, startMax, ImVec2(su0, sv0), ImVec2(su1, sv1));
         } else {
-            // Procedural Green Glossy Start Button
             ImU32 sCol = (isPressStart || g_StartMenuOpen) ? IM_COL32(30, 115, 30, 255) :
                          (isHoverStart ? IM_COL32(60, 195, 60, 255) : IM_COL32(45, 160, 45, 255));
             fgDraw->AddRectFilled(startMin, startMax, sCol, 0.0f);
         }
 
-        // Start text with Windows flag
         if (g_pTexButterfly) {
             fgDraw->AddImage((ImTextureID)g_pTexButterfly, ImVec2(startMin.x + 8.0f, startMin.y + 6.0f), ImVec2(startMin.x + 28.0f, startMin.y + 26.0f));
         }
@@ -1386,17 +1490,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
                                io.MousePos.y >= tabMin.y && io.MousePos.y <= tabMax.y);
             bool isActive = !g_Windows[i].is_minimized && (g_Windows[i].z_order == g_TopZOrder);
 
-            // Tab Background (Sunken for active, raised for inactive)
             ImU32 tabCol = isActive ? IM_COL32(25, 65, 165, 255) : (isTabHover ? IM_COL32(65, 140, 245, 255) : IM_COL32(49, 106, 197, 240));
             fgDraw->AddRectFilled(tabMin, tabMax, tabCol, 3.0f);
             fgDraw->AddRect(tabMin, tabMax, isActive ? IM_COL32(15, 45, 120, 255) : IM_COL32(95, 165, 255, 255), 3.0f);
 
-            // Icon
             if (g_Windows[i].icon) {
                 fgDraw->AddImage((ImTextureID)g_Windows[i].icon, ImVec2(tabMin.x + 6.0f, tabMin.y + 5.0f), ImVec2(tabMin.x + 22.0f, tabMin.y + 21.0f));
             }
 
-            // Title
             std::string shortTitle = g_Windows[i].title;
             if (shortTitle.length() > 18) shortTitle = shortTitle.substr(0, 16) + "..";
 
@@ -1411,17 +1512,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             taskTabX += taskTabW + 4.0f;
         }
 
-        // --- System Tray (Notification Area on Right) ---
-        float trayW = 160.0f;
+        // --- System Tray ---
+        float trayW = 140.0f;
         float trayX = displayW - trayW;
         ImVec2 trayMin(trayX, tbY);
         ImVec2 trayMax(displayW, displayH);
 
-        // Darker Blue Inset Background
         fgDraw->AddRectFilled(trayMin, trayMax, IM_COL32(15, 47, 118, 255));
         fgDraw->AddLine(trayMin, ImVec2(trayX, displayH), IM_COL32(10, 30, 80, 255), 1.5f);
 
-        // Tray Clock
         time_t now = time(nullptr);
         tm localTime;
         localtime_s(&localTime, &now);
@@ -1432,7 +1531,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         fgDraw->AddText(ImVec2(displayW - 54.0f, tbY + 8.0f), IM_COL32(255, 255, 255, 255), timeStr);
         if (g_FontDefault) ImGui::PopFont();
 
-        // Tray Exit Button
         float exitW = 58.0f;
         ImVec2 exitMin(trayX + 8.0f, tbY + 5.0f);
         ImVec2 exitMax(exitMin.x + exitW, tbY + 27.0f);
@@ -1449,32 +1547,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             PostQuitMessage(0);
         }
 
-        // =========================================================================
-        // 7. Balloon Tooltip (XP Notification)
-        // =========================================================================
-        if (g_ShowBalloon) {
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - g_BalloonStartTime).count();
-            if (elapsed > 7) {
-                g_ShowBalloon = false;
-            } else {
-                float bW = 280.0f;
-                float bH = 80.0f;
-                ImVec2 bMin(displayW - bW - 20.0f, displayH - 32.0f - bH - 12.0f);
-                ImVec2 bMax(bMin.x + bW, bMin.y + bH);
-
-                fgDraw->AddRectFilled(bMin, bMax, IM_COL32(255, 255, 225, 255), 6.0f);
-                fgDraw->AddRect(bMin, bMax, IM_COL32(0, 0, 0, 255), 6.0f, 0, 1.0f);
-
-                if (g_FontBold) ImGui::PushFont(g_FontBold);
-                fgDraw->AddText(ImVec2(bMin.x + 12.0f, bMin.y + 10.0f), IM_COL32(0, 0, 0, 255), "Поддержка ClusterShift v0.6.0");
-                if (g_FontBold) ImGui::PopFont();
-
-                if (g_FontSmall) ImGui::PushFont(g_FontSmall);
-                fgDraw->AddText(ImVec2(bMin.x + 12.0f, bMin.y + 32.0f), IM_COL32(60, 60, 60, 255), "Спасибо за использование ClusterShift!\nАвтор проекта: joive");
-                if (g_FontSmall) ImGui::PopFont();
-            }
-        }
-
         // Rendering DirectX Frame
         ImGui::Render();
         const float clear_color_with_alpha[4] = { 0.0f, 0.3f, 0.6f, 1.0f };
@@ -1488,6 +1560,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     // Cleanup Textures
     if (g_pBlissTextureView) g_pBlissTextureView->Release();
     if (g_pUIThemeTextureView) g_pUIThemeTextureView->Release();
+    if (g_pBootScreenTextureView) g_pBootScreenTextureView->Release();
     if (g_pTexComputer) g_pTexComputer->Release();
     if (g_pTexDefrag) g_pTexDefrag->Release();
     if (g_pTexCleanup) g_pTexCleanup->Release();
@@ -1498,6 +1571,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     if (g_pTexPieChart) g_pTexPieChart->Release();
     if (g_pTexFirewall) g_pTexFirewall->Release();
     if (g_pTexButterfly) g_pTexButterfly->Release();
+    if (g_pTexCoin) g_pTexCoin->Release();
+    if (g_pTexExit) g_pTexExit->Release();
 
     // Shutdown Backends
     ImGui_ImplDX11_Shutdown();
@@ -1585,7 +1660,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         return 0;
     case WM_SYSCOMMAND:
-        if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
+        if ((wParam & 0xfff0) == SC_KEYMENU)
             return 0;
         break;
     case WM_DESTROY:
