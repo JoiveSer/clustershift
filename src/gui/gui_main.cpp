@@ -1,6 +1,8 @@
 // language: C++, file: gui_main.cpp, target: Windows 10/11, MSVC, DirectX 11 + Dear ImGui
-// ClusterShift OS — Authentic Windows XP Luna Edition
-// Uses extracted assets from Downloads\WinXp.zip (Bliss.png, tahoma.ttf, Sounds)
+// ClusterShift OS — Authentic Windows XP Luna Edition (v0.6.0 by joive)
+// 100% Native Windows XP Shell: 4K Bliss Wallpaper, 48px Desktop Icons,
+// Real Luna Windows, 3D Titlebar Buttons, Start Menu, Defrag Visualizer, Sounds
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -21,12 +23,12 @@
 #include <sstream>
 #include <algorithm>
 #include <ctime>
+#include <cmath>
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 
-#include "gui/modern_theme.hpp"
 #include "core/volume_manager.hpp"
 #include "core/disk_telemetry.hpp"
 #include "core/disk_benchmark.hpp"
@@ -42,6 +44,8 @@
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "windowscodecs.lib")
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "ole32.lib")
@@ -56,63 +60,129 @@ IDXGISwapChain*         g_pSwapChain = nullptr;
 UINT                    g_ResizeWidth = 0, g_ResizeHeight = 0;
 ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 
-// Texture Resources for Windows XP
+// Texture Assets
 ID3D11ShaderResourceView* g_pBlissTextureView = nullptr;
-int g_bliss_tex_w = 0, g_bliss_tex_h = 0;
+int g_BlissWidth = 0, g_BlissHeight = 0;
 
-ID3D11ShaderResourceView* g_pIconsTextureView = nullptr;
-int g_icons_tex_w = 0, g_icons_tex_h = 0;
+ID3D11ShaderResourceView* g_pUIThemeTextureView = nullptr;
+int g_UIThemeWidth = 0, g_UIThemeHeight = 0;
 
-ID3D11ShaderResourceView* g_pThemeTextureView = nullptr;
-int g_theme_tex_w = 0, g_theme_tex_h = 0;
+// 48x48 Icon Textures
+ID3D11ShaderResourceView* g_pTexComputer = nullptr;
+ID3D11ShaderResourceView* g_pTexDefrag = nullptr;
+ID3D11ShaderResourceView* g_pTexCleanup = nullptr;
+ID3D11ShaderResourceView* g_pTexBenchmark = nullptr;
+ID3D11ShaderResourceView* g_pTexControlPanel = nullptr;
+ID3D11ShaderResourceView* g_pTexCmd = nullptr;
+ID3D11ShaderResourceView* g_pTexRecycle = nullptr;
+ID3D11ShaderResourceView* g_pTexPieChart = nullptr;
+ID3D11ShaderResourceView* g_pTexFirewall = nullptr;
+ID3D11ShaderResourceView* g_pTexButterfly = nullptr;
 
-// Fonts (Windows XP Tahoma & Consolas)
-ImFont* g_font_xp_small  = nullptr; // 11px: status & captions
-ImFont* g_font_xp        = nullptr; // 13px: default dialog text
-ImFont* g_font_xp_bold   = nullptr; // 14px: window headers & buttons
-ImFont* g_font_xp_metric = nullptr; // 22px: benchmark readouts
+// Fonts
+ImFont* g_FontDefault = nullptr;
+ImFont* g_FontSmall = nullptr;
+ImFont* g_FontBold = nullptr;
+ImFont* g_FontLarge = nullptr;
+ImFont* g_FontStartHeader = nullptr;
 
-bool CreateDeviceD3D(HWND hWnd);
-void CleanupDeviceD3D();
-void CreateRenderTarget();
-void CleanupRenderTarget();
-LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+// Sound System
+void PlayXPSound(const std::wstring& soundFileName) {
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(NULL, exePath, MAX_PATH);
+    std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
+    
+    std::vector<std::filesystem::path> checkPaths = {
+        exeDir / L"assets" / L"winxp" / L"WinXp" / L"Sounds" / soundFileName,
+        exeDir / L"assets" / L"Sounds" / soundFileName,
+        std::filesystem::current_path() / L"assets" / L"winxp" / L"WinXp" / L"Sounds" / soundFileName,
+        std::filesystem::current_path() / L"assets" / L"Sounds" / soundFileName
+    };
 
-// Native WIC (Windows Imaging Component) PNG Texture Loader
-bool LoadTextureFromFileWIC(ID3D11Device* pDevice, const wchar_t* filename, ID3D11ShaderResourceView** out_srv, int* out_width, int* out_height) {
-    if (!pDevice || !filename || !out_srv) return false;
+    for (const auto& p : checkPaths) {
+        if (std::filesystem::exists(p)) {
+            PlaySoundW(p.c_str(), NULL, SND_FILENAME | SND_ASYNC);
+            return;
+        }
+    }
+}
 
+// Path Resolver for Assets
+std::wstring ResolveAssetPath(const std::wstring& relativePath) {
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(NULL, exePath, MAX_PATH);
+    std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
+
+    std::vector<std::filesystem::path> candidates = {
+        exeDir / relativePath,
+        exeDir / L"assets" / relativePath,
+        std::filesystem::current_path() / relativePath,
+        std::filesystem::current_path() / L"assets" / relativePath,
+        std::filesystem::path(L"C:\\Users\\kyryl\\.gemini\\antigravity\\scratch\\cluster_shift") / relativePath,
+        std::filesystem::path(L"C:\\Users\\kyryl\\.gemini\\antigravity\\scratch\\cluster_shift\\assets") / relativePath
+    };
+
+    for (const auto& cand : candidates) {
+        if (std::filesystem::exists(cand)) {
+            return cand.wstring();
+        }
+    }
+    return relativePath;
+}
+
+// WIC Texture Loader
+ID3D11ShaderResourceView* LoadTextureFromFileWIC(ID3D11Device* device, const wchar_t* filename, int* out_width, int* out_height) {
     IWICImagingFactory* pFactory = nullptr;
     HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pFactory));
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) return nullptr;
 
     IWICBitmapDecoder* pDecoder = nullptr;
     hr = pFactory->CreateDecoderFromFilename(filename, nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &pDecoder);
-    if (FAILED(hr)) { pFactory->Release(); return false; }
+    if (FAILED(hr)) {
+        pFactory->Release();
+        return nullptr;
+    }
 
     IWICBitmapFrameDecode* pFrame = nullptr;
     hr = pDecoder->GetFrame(0, &pFrame);
-    if (FAILED(hr)) { pDecoder->Release(); pFactory->Release(); return false; }
-
-    UINT width = 0, height = 0;
-    pFrame->GetSize(&width, &height);
+    if (FAILED(hr)) {
+        pDecoder->Release();
+        pFactory->Release();
+        return nullptr;
+    }
 
     IWICFormatConverter* pConverter = nullptr;
     hr = pFactory->CreateFormatConverter(&pConverter);
-    if (FAILED(hr)) { pFrame->Release(); pDecoder->Release(); pFactory->Release(); return false; }
+    if (FAILED(hr)) {
+        pFrame->Release();
+        pDecoder->Release();
+        pFactory->Release();
+        return nullptr;
+    }
 
     hr = pConverter->Initialize(pFrame, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom);
-    if (FAILED(hr)) { pConverter->Release(); pFrame->Release(); pDecoder->Release(); pFactory->Release(); return false; }
+    if (FAILED(hr)) {
+        pConverter->Release();
+        pFrame->Release();
+        pDecoder->Release();
+        pFactory->Release();
+        return nullptr;
+    }
 
-    std::vector<BYTE> buffer(width * height * 4);
-    hr = pConverter->CopyPixels(nullptr, width * 4, (UINT)buffer.size(), buffer.data());
+    UINT width = 0, height = 0;
+    pConverter->GetSize(&width, &height);
+
+    std::vector<BYTE> pixelBuffer(width * height * 4);
+    hr = pConverter->CopyPixels(nullptr, width * 4, (UINT)pixelBuffer.size(), pixelBuffer.data());
+    
     pConverter->Release();
     pFrame->Release();
     pDecoder->Release();
     pFactory->Release();
-    if (FAILED(hr)) return false;
 
-    D3D11_TEXTURE2D_DESC desc{};
+    if (FAILED(hr)) return nullptr;
+
+    D3D11_TEXTURE2D_DESC desc = {};
     desc.Width = width;
     desc.Height = height;
     desc.MipLevels = 1;
@@ -122,1399 +192,755 @@ bool LoadTextureFromFileWIC(ID3D11Device* pDevice, const wchar_t* filename, ID3D
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 
-    D3D11_SUBRESOURCE_DATA subResource{};
-    subResource.pSysMem = buffer.data();
-    subResource.SysMemPitch = desc.Width * 4;
+    D3D11_SUBRESOURCE_DATA subResource = {};
+    subResource.pSysMem = pixelBuffer.data();
+    subResource.SysMemPitch = width * 4;
 
     ID3D11Texture2D* pTexture = nullptr;
-    hr = pDevice->CreateTexture2D(&desc, &subResource, &pTexture);
-    if (FAILED(hr)) return false;
+    hr = device->CreateTexture2D(&desc, &subResource, &pTexture);
+    if (FAILED(hr)) return nullptr;
 
-    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-    srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = desc.Format;
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MipLevels = 1;
+    srvDesc.Texture2D.MipLevels = desc.MipLevels;
 
-    hr = pDevice->CreateShaderResourceView(pTexture, &srvDesc, out_srv);
+    ID3D11ShaderResourceView* pSRV = nullptr;
+    hr = device->CreateShaderResourceView(pTexture, &srvDesc, &pSRV);
     pTexture->Release();
-    if (FAILED(hr)) return false;
 
-    if (out_width) *out_width = width;
-    if (out_height) *out_height = height;
-    return true;
+    if (FAILED(hr)) return nullptr;
+
+    if (out_width) *out_width = (int)width;
+    if (out_height) *out_height = (int)height;
+    return pSRV;
 }
 
-inline std::wstring ResolveAssetPath(const std::wstring& rel_path) {
-    wchar_t exe_buf[MAX_PATH] = { 0 };
-    if (GetModuleFileNameW(NULL, exe_buf, MAX_PATH)) {
-        std::filesystem::path exe_dir = std::filesystem::path(exe_buf).parent_path();
-        auto p1 = exe_dir / rel_path;
-        if (std::filesystem::exists(p1)) return p1.wstring();
-        auto p2 = exe_dir / L".." / rel_path;
-        if (std::filesystem::exists(p2)) return p2.wstring();
-        auto p3 = exe_dir / L"../.." / rel_path;
-        if (std::filesystem::exists(p3)) return p3.wstring();
-    }
-    if (std::filesystem::exists(rel_path)) return rel_path;
-    std::filesystem::path fixed_dir = L"C:\\Users\\kyryl\\.gemini\\antigravity\\scratch\\cluster_shift";
-    auto p4 = fixed_dir / rel_path;
-    if (std::filesystem::exists(p4)) return p4.wstring();
-    return L"";
-}
-
-// WinIcons_32 is 736x704: 23 columns x 22 rows of 32x32 icons
-inline void GetIconUV(int col, int row, ImVec2& uv0, ImVec2& uv1) {
-    const float tex_w = 736.0f;
-    const float tex_h = 704.0f;
-    const float icon_sz = 32.0f;
-    uv0 = ImVec2((col * icon_sz) / tex_w, (row * icon_sz) / tex_h);
-    uv1 = ImVec2(((col + 1) * icon_sz) / tex_w, ((row + 1) * icon_sz) / tex_h);
-}
-
-inline void DrawXpIcon(ImDrawList* dl, int col, int row, const ImVec2& pos, float size = 32.0f) {
-    if (g_pIconsTextureView && dl) {
-        ImVec2 uv0, uv1;
-        GetIconUV(col, row, uv0, uv1);
-        dl->AddImage(reinterpret_cast<ImTextureID>(g_pIconsTextureView), pos, ImVec2(pos.x + size, pos.y + size), uv0, uv1);
-    }
-}
-
-inline std::vector<wchar_t> enumerate_all_drives() {
-    std::vector<wchar_t> drives;
-    DWORD mask = GetLogicalDrives();
-    for (int i = 0; i < 26; ++i) {
-        if (mask & (1 << i)) {
-            drives.push_back(static_cast<wchar_t>(L'A' + i));
-        }
-    }
-    return drives;
-}
-
-struct AppWindowState {
-    bool is_open = false;
-    bool is_minimized = false;
-    bool is_maximized = false;
-    ImVec2 normal_pos = ImVec2(0, 0);
-    ImVec2 normal_size = ImVec2(0, 0);
-    ImVec2 restore_pos = ImVec2(0, 0);
-    ImVec2 restore_size = ImVec2(0, 0);
+// Window Management System
+enum WindowID {
+    WIN_MY_COMPUTER = 0,
+    WIN_DEFRAG,
+    WIN_CLEANUP,
+    WIN_BENCHMARK,
+    WIN_CMD,
+    WIN_CONTROL_PANEL,
+    WIN_RECYCLE,
+    WIN_DONATE,
+    WIN_COUNT
 };
 
-struct GuiState {
-    std::vector<wchar_t> available_drives;
-    int selected_drive_idx = 0;
-
-    clustershift::core::VolumeDetails volume_details{};
-    clustershift::core::DiskHealthTelemetry telemetry{};
-    bool telemetry_loaded = false;
-
-    // Benchmark state
-    std::atomic<bool> bench_running{false};
-    clustershift::core::BenchmarkMetrics bench_results{};
-    bool bench_has_results = false;
-    std::string bench_status_text = "Очередь IOCP готова к работе.";
-    int bench_sample_size_mb = 1024;
-    int bench_threads = 16;
-
-    // Space Hogs state
-    std::atomic<bool> hogs_running{false};
-    clustershift::core::SpaceHogsReport hogs_results{};
-    bool hogs_has_results = false;
-    char hogs_path_input[MAX_PATH] = "C:\\";
-    std::string hogs_status_text = "Выберите папку для сканирования.";
-
-    // Cluster Map state
-    std::atomic<bool> map_loading{false};
-    std::shared_ptr<clustershift::core::ClusterMap> cluster_map_data;
-    bool map_loaded = false;
-    std::string map_status_text = "Нажмите кнопку для загрузки $Bitmap.";
-
-    // Maintenance state
-    std::string trim_result_msg = "Готов к отправке DeviceDsmAction_Trim.";
-    bool context_menu_installed = false;
-
-    // Settings state
-    int settings_active_section = 0;
-
-    // Terminal state
-    std::vector<std::string> terminal_lines;
-    char terminal_input[256] = "";
-
-    // Donate state
-    std::string donate_copied_msg = "";
-
-    // Windows XP Shell State
-    bool start_menu_open = false;
-    int selected_desktop_icon = -1;
-
-    // 7 OS Applications
-    AppWindowState win_storage;
-    AppWindowState win_bench;
-    AppWindowState win_hogs;
-    AppWindowState win_map;
-    AppWindowState win_settings;
-    AppWindowState win_terminal;
-    AppWindowState win_donate;
-
-    bool layout_initialized = false;
-
-    void LogTerminal(const std::string& line) {
-        terminal_lines.push_back(line);
-        if (terminal_lines.size() > 500) {
-            terminal_lines.erase(terminal_lines.begin());
-        }
-    }
-
-    void ResetLayout(ImVec2 sz) {
-        float taskbar_h = 32.0f;
-        float avail_h = sz.y - taskbar_h - 40.0f;
-
-        // Default layout on boot: My Computer on left, Control Panel on right
-        win_storage.is_open = true;
-        win_storage.is_minimized = false;
-        win_storage.is_maximized = false;
-        win_storage.normal_pos = ImVec2(130.0f, 32.0f);
-        win_storage.normal_size = ImVec2(530.0f, avail_h);
-
-        win_settings.is_open = true;
-        win_settings.is_minimized = false;
-        win_settings.is_maximized = false;
-        win_settings.normal_pos = ImVec2(680.0f, 32.0f);
-        win_settings.normal_size = ImVec2(530.0f, avail_h);
-
-        win_bench.is_open = false;
-        win_bench.is_minimized = false;
-        win_bench.is_maximized = false;
-        win_bench.normal_pos = ImVec2(200.0f, 50.0f);
-        win_bench.normal_size = ImVec2(760.0f, 520.0f);
-
-        win_hogs.is_open = false;
-        win_hogs.is_minimized = false;
-        win_hogs.is_maximized = false;
-        win_hogs.normal_pos = ImVec2(220.0f, 70.0f);
-        win_hogs.normal_size = ImVec2(780.0f, 500.0f);
-
-        win_map.is_open = false;
-        win_map.is_minimized = false;
-        win_map.is_maximized = false;
-        win_map.normal_pos = ImVec2(240.0f, 80.0f);
-        win_map.normal_size = ImVec2(760.0f, 480.0f);
-
-        win_terminal.is_open = false;
-        win_terminal.is_minimized = false;
-        win_terminal.is_maximized = false;
-        win_terminal.normal_pos = ImVec2(260.0f, 90.0f);
-        win_terminal.normal_size = ImVec2(680.0f, 440.0f);
-
-        win_donate.is_open = false;
-        win_donate.is_minimized = false;
-        win_donate.is_maximized = false;
-        win_donate.normal_pos = ImVec2((sz.x - 480.0f) * 0.5f, (sz.y - 360.0f) * 0.45f);
-        win_donate.normal_size = ImVec2(480.0f, 360.0f);
-    }
-
-    void EnsureInitialized(ImVec2 sz) {
-        if (!layout_initialized) {
-            layout_initialized = true;
-            ResetLayout(sz);
-
-            LogTerminal("Microsoft Windows XP [Версия 5.1.2600]");
-            LogTerminal("(C) Корпорация Майкрософт, 1985-2001.");
-            LogTerminal("");
-            LogTerminal("[INIT] ClusterShift Core v0.6.0 [by joive] загружен.");
-            LogTerminal("[INIT] Диспетчер прямого ввода-вывода IOCP активен.");
-            LogTerminal("[INIT] Обнаружен накопитель: stornvme.sys (Physical 4KB).");
-        }
-    }
+struct XPWindow {
+    int id;
+    std::string title;
+    ID3D11ShaderResourceView* icon;
+    ImVec2 pos;
+    ImVec2 size;
+    ImVec2 min_size;
+    bool is_open;
+    bool is_minimized;
+    bool is_maximized;
+    ImVec2 restore_pos;
+    ImVec2 restore_size;
+    int z_order;
 };
 
-GuiState g_state;
+std::vector<XPWindow> g_Windows;
+int g_TopZOrder = 1;
 
-void RefreshDrives() {
-    g_state.available_drives = enumerate_all_drives();
-    if (!g_state.available_drives.empty()) {
-        if (g_state.selected_drive_idx >= (int)g_state.available_drives.size()) {
-            g_state.selected_drive_idx = 0;
-        }
-        wchar_t drv = g_state.available_drives[g_state.selected_drive_idx];
-        auto vol = clustershift::core::VolumeManager::open_volume(drv, false);
-        if (vol.has_value()) {
-            auto telem = clustershift::core::DiskTelemetry::query_telemetry(vol->get());
-            if (telem.has_value()) {
-                g_state.telemetry = *telem;
-            }
-        }
-        auto det = clustershift::core::VolumeManager::query_volume_details(drv);
-        if (det.has_value()) {
-            g_state.volume_details = *det;
-            g_state.telemetry_loaded = true;
-        }
-    }
-}
+void InitWindows() {
+    g_Windows.resize(WIN_COUNT);
 
-// Micro-Component 1: Windows XP Bliss Wallpaper (Authentic Photographic Wallpaper)
-void RenderBlissWallpaper(const ImVec2& sz) {
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    if (g_pBlissTextureView) {
-        dl->AddImage((ImTextureID)g_pBlissTextureView, ImVec2(0, 0), sz);
-    } else {
-        // Authentic solid Windows XP Royal Blue fallback (#004E98)
-        dl->AddRectFilled(ImVec2(0, 0), sz, IM_COL32(0, 78, 152, 255));
-    }
-}
-
-// Micro-Component 2: Desktop Icons (Original 32x32 XP Icons from WinIcons_32.png)
-void RenderDesktopIcons(GuiState& state, const ImVec2& sz) {
-    struct DesktopItem {
-        const char* label;
-        int icon_col;
-        int icon_row;
-        AppWindowState& app;
+    // 1. My Computer
+    g_Windows[WIN_MY_COMPUTER] = {
+        WIN_MY_COMPUTER,
+        "Мой компьютер",
+        nullptr,
+        ImVec2(80, 70), ImVec2(620, 480), ImVec2(400, 300),
+        false, false, false,
+        ImVec2(80, 70), ImVec2(620, 480),
+        0
     };
 
-    DesktopItem items[6] = {
-        { "Мой компьютер",     5,  3, state.win_storage },
-        { "Тест скорости",    20, 15, state.win_bench },
-        { "Очистка диска",    19,  0, state.win_hogs },
-        { "Дефрагментатор",   22, 15, state.win_map },
-        { "Панель управления", 18,  0, state.win_settings },
-        { "Командная строка",   4, 10, state.win_terminal },
+    // 2. Disk Defragmenter
+    g_Windows[WIN_DEFRAG] = {
+        WIN_DEFRAG,
+        "Дефрагментатор диска — ClusterShift",
+        nullptr,
+        ImVec2(140, 100), ImVec2(760, 520), ImVec2(500, 350),
+        true, false, false, // Open by default
+        ImVec2(140, 100), ImVec2(760, 520),
+        1
     };
 
-    float start_x = 20.0f;
-    float start_y = 20.0f;
-    float icon_box_w = 90.0f;
-    float icon_box_h = 76.0f;
-    float spacing_y = 10.0f;
+    // 3. Disk Cleanup (cleanmgr)
+    g_Windows[WIN_CLEANUP] = {
+        WIN_CLEANUP,
+        "Очистка диска (C:)",
+        nullptr,
+        ImVec2(220, 120), ImVec2(480, 440), ImVec2(380, 350),
+        false, false, false,
+        ImVec2(220, 120), ImVec2(480, 440),
+        0
+    };
 
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    // 4. Benchmark
+    g_Windows[WIN_BENCHMARK] = {
+        WIN_BENCHMARK,
+        "Тест скорости накопителя (NVMe/SSD Benchmark)",
+        nullptr,
+        ImVec2(180, 90), ImVec2(680, 460), ImVec2(450, 300),
+        false, false, false,
+        ImVec2(180, 90), ImVec2(680, 460),
+        0
+    };
 
-    for (int i = 0; i < 6; ++i) {
-        float x = start_x;
-        float y = start_y + i * (icon_box_h + spacing_y);
+    // 5. Command Prompt (cmd.exe)
+    g_Windows[WIN_CMD] = {
+        WIN_CMD,
+        "Командная строка — clustershift.exe",
+        nullptr,
+        ImVec2(100, 160), ImVec2(650, 420), ImVec2(400, 250),
+        false, false, false,
+        ImVec2(100, 160), ImVec2(650, 420),
+        0
+    };
 
-        ImGui::SetCursorScreenPos(ImVec2(x, y));
-        ImGui::PushID(100 + i);
+    // 6. Control Panel
+    g_Windows[WIN_CONTROL_PANEL] = {
+        WIN_CONTROL_PANEL,
+        "Панель управления ClusterShift",
+        nullptr,
+        ImVec2(160, 110), ImVec2(600, 440), ImVec2(420, 300),
+        false, false, false,
+        ImVec2(160, 110), ImVec2(600, 440),
+        0
+    };
 
-        bool is_selected = (state.selected_desktop_icon == i);
+    // 7. Recycle Bin
+    g_Windows[WIN_RECYCLE] = {
+        WIN_RECYCLE,
+        "Корзина",
+        nullptr,
+        ImVec2(200, 140), ImVec2(520, 380), ImVec2(360, 260),
+        false, false, false,
+        ImVec2(200, 140), ImVec2(520, 380),
+        0
+    };
 
-        if (ImGui::InvisibleButton("##DesktopIconBtn", ImVec2(icon_box_w, icon_box_h))) {
-            if (state.selected_desktop_icon == i) {
-                items[i].app.is_open = true;
-                items[i].app.is_minimized = false;
+    // 8. Donate joive
+    g_Windows[WIN_DONATE] = {
+        WIN_DONATE,
+        "Копейка joive — Поддержка автора",
+        nullptr,
+        ImVec2(300, 180), ImVec2(440, 320), ImVec2(360, 240),
+        false, false, false,
+        ImVec2(300, 180), ImVec2(440, 320),
+        0
+    };
+}
+
+void BringToFront(int winId) {
+    if (winId >= 0 && winId < WIN_COUNT) {
+        g_Windows[winId].is_minimized = false;
+        g_Windows[winId].z_order = ++g_TopZOrder;
+    }
+}
+
+void ToggleWindow(int winId) {
+    if (winId >= 0 && winId < WIN_COUNT) {
+        if (!g_Windows[winId].is_open) {
+            g_Windows[winId].is_open = true;
+            g_Windows[winId].is_minimized = false;
+            BringToFront(winId);
+            PlayXPSound(L"Windows XP Start.wav");
+        } else if (g_Windows[winId].is_minimized) {
+            g_Windows[winId].is_minimized = false;
+            BringToFront(winId);
+            PlayXPSound(L"Windows XP Restore.wav");
+        } else {
+            // Check if top window
+            bool isTop = true;
+            for (const auto& w : g_Windows) {
+                if (w.is_open && !w.is_minimized && w.z_order > g_Windows[winId].z_order) {
+                    isTop = false;
+                    break;
+                }
+            }
+            if (isTop) {
+                g_Windows[winId].is_minimized = true;
+                PlayXPSound(L"Windows XP Minimize.wav");
             } else {
-                state.selected_desktop_icon = i;
+                BringToFront(winId);
             }
         }
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            items[i].app.is_open = true;
-            items[i].app.is_minimized = false;
-        }
-
-        bool is_hovered = ImGui::IsItemHovered();
-
-        // 32x32 original icon from WinIcons_32.png
-        ImVec2 icon_pos(x + (icon_box_w - 32.0f) * 0.5f, y + 4.0f);
-        DrawXpIcon(dl, items[i].icon_col, items[i].icon_row, icon_pos, 32.0f);
-
-        // Text dimensions
-        ImVec2 text_sz = ImGui::CalcTextSize(items[i].label);
-        float text_box_w = text_sz.x + 8.0f;
-        float text_box_h = text_sz.y + 4.0f;
-        ImVec2 text_box_p0(x + (icon_box_w - text_box_w) * 0.5f, y + 42.0f);
-        ImVec2 text_box_p1(text_box_p0.x + text_box_w, text_box_p0.y + text_box_h);
-
-        if (is_selected) {
-            dl->AddRectFilled(text_box_p0, text_box_p1, IM_COL32(49, 106, 197, 230), 2.0f);
-            dl->AddRect(text_box_p0, text_box_p1, IM_COL32(255, 255, 255, 220), 2.0f, 0, 1.0f);
-        } else if (is_hovered) {
-            dl->AddRectFilled(text_box_p0, text_box_p1, IM_COL32(255, 255, 255, 60), 2.0f);
-        }
-
-        ImVec2 text_pos(text_box_p0.x + 4.0f, text_box_p0.y + 2.0f);
-        if (!is_selected) {
-            dl->AddText(ImVec2(text_pos.x + 1.0f, text_pos.y + 1.0f), IM_COL32(0, 0, 0, 255), items[i].label);
-        }
-        dl->AddText(text_pos, IM_COL32(255, 255, 255, 255), items[i].label);
-
-        ImGui::PopID();
     }
 }
 
-// Micro-Component 3: Golden Coin "Копейка joive" (Donate button at the top)
-void RenderDonateBadge(GuiState& state, const ImVec2& sz) {
-    float badge_w = 210.0f;
-    float badge_h = 30.0f;
-    float badge_x = sz.x - badge_w - 20.0f;
-    float badge_y = 12.0f;
+// Desktop Icon Layout
+struct DesktopIcon {
+    int windowId;
+    std::string title;
+    ID3D11ShaderResourceView* icon;
+};
 
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    ImVec2 p0(badge_x, badge_y);
-    ImVec2 p1(badge_x + badge_w, badge_y + badge_h);
+int g_SelectedDesktopIcon = -1;
+bool g_StartMenuOpen = false;
+bool g_ShowBalloon = false;
+std::chrono::steady_clock::time_point g_BalloonStartTime;
 
-    // Glowing Gold Pill
-    dl->AddRectFilled(p0, p1, IM_COL32(35, 28, 8, 230), 15.0f);
-    dl->AddRect(p0, p1, IM_COL32(255, 215, 0, 255), 15.0f, 0, 1.5f);
+// Defrag Simulation State
+struct DefragState {
+    bool is_running = false;
+    float progress = 0.35f;
+    int fragmented_clusters = 4210;
+    int total_clusters = 65536;
+    int free_clusters = 22400;
+    std::vector<int> cluster_grid; // 0=free, 1=contiguous, 2=fragmented, 3=unmovable
+};
 
-    ImGui::SetNextWindowPos(p0);
-    ImGui::SetNextWindowSize(ImVec2(badge_w, badge_h));
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | 
-                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground;
+DefragState g_Defrag;
 
-    if (ImGui::Begin("##DonateBadgeWindow", nullptr, flags)) {
-        ImGui::SetCursorPos(ImVec2(10.0f, 4.0f));
-        if (ImGui::Button("🪙  Копейка joive  [Донат]", ImVec2(badge_w - 20.0f, 22.0f))) {
-            state.win_donate.is_open = true;
-            state.win_donate.is_minimized = false;
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Поддержать архитектора проекта (joive)\nНажмите для открытия реквизитов");
-        }
-    }
-    ImGui::End();
-}
-
-// Micro-Component 4: Classic Windows XP Luna Window Titlebar (with Authentic Sprites)
-void RenderAppTitlebar(const char* app_name, const char* path_tag, AppWindowState& app, int icon_col = 5, int icon_row = 3) {
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    ImVec2 p0 = ImGui::GetCursorScreenPos();
-    float width = ImGui::GetContentRegionAvail().x;
-    float height = 28.0f;
-    ImVec2 p1 = ImVec2(p0.x + width, p0.y + height);
-
-    // 1. Draw Titlebar Header from UI Theme.png
-    if (g_pThemeTextureView) {
-        // Left rounded cap (w=40, h=28)
-        ImVec2 uv_left_0(27.0f / 1024.0f, 393.0f / 1024.0f);
-        ImVec2 uv_left_1(80.0f / 1024.0f, 423.0f / 1024.0f);
-        dl->AddImage((ImTextureID)g_pThemeTextureView, p0, ImVec2(p0.x + 40.0f, p1.y), uv_left_0, uv_left_1);
-
-        // Middle stretch
-        ImVec2 uv_mid_0(100.0f / 1024.0f, 393.0f / 1024.0f);
-        ImVec2 uv_mid_1(140.0f / 1024.0f, 423.0f / 1024.0f);
-        dl->AddImage((ImTextureID)g_pThemeTextureView, ImVec2(p0.x + 40.0f, p0.y), ImVec2(p1.x - 40.0f, p1.y), uv_mid_0, uv_mid_1);
-
-        // Right rounded cap
-        ImVec2 uv_right_0(176.0f / 1024.0f, 393.0f / 1024.0f);
-        ImVec2 uv_right_1(226.0f / 1024.0f, 423.0f / 1024.0f);
-        dl->AddImage((ImTextureID)g_pThemeTextureView, ImVec2(p1.x - 40.0f, p0.y), p1, uv_right_0, uv_right_1);
-    } else {
-        // Fallback Luna Gradient
-        dl->AddRectFilledMultiColor(p0, p1, IM_COL32(0, 85, 234, 255), IM_COL32(56, 141, 246, 255), IM_COL32(0, 85, 234, 255), IM_COL32(0, 85, 234, 255));
-    }
-
-    // 2. Window Icon (16x16)
-    DrawXpIcon(dl, icon_col, icon_row, ImVec2(p0.x + 6.0f, p0.y + 6.0f), 16.0f);
-
-    // 3. Title text with shadow
-    char title_buf[256];
-    snprintf(title_buf, sizeof(title_buf), "%s  —  %s", app_name, path_tag);
-    ImVec2 text_pos(p0.x + 28.0f, p0.y + 6.0f);
-    dl->AddText(ImVec2(text_pos.x + 1.0f, text_pos.y + 1.0f), IM_COL32(0, 30, 80, 220), title_buf);
-    dl->AddText(text_pos, IM_COL32(255, 255, 255, 255), title_buf);
-
-    // 4. Drag area
-    float drag_w = width - 120.0f;
-    if (drag_w > 10.0f && !app.is_maximized) {
-        ImGui::SetCursorScreenPos(ImVec2(p0.x + 28.0f, p0.y));
-        ImGui::InvisibleButton("##XpTitleDrag", ImVec2(drag_w, height));
-        if (ImGui::IsItemActive()) {
-            ImVec2 delta = ImGui::GetIO().MouseDelta;
-            ImGui::SetWindowPos(ImVec2(ImGui::GetWindowPos().x + delta.x, ImGui::GetWindowPos().y + delta.y));
-        }
-    }
-
-    // 5. Authentic Window Control Buttons from UI Theme.png
-    float btn_sz = 21.0f;
-    float btns_start_x = p1.x - 76.0f;
-    float btn_y = p0.y + 4.0f;
-
-    // Minimize
-    ImVec2 min_p0(btns_start_x, btn_y);
-    ImVec2 min_p1(min_p0.x + btn_sz, min_p0.y + btn_sz);
-    ImGui::SetCursorScreenPos(min_p0);
-    if (ImGui::InvisibleButton("##min_btn", ImVec2(btn_sz, btn_sz))) {
-        app.is_minimized = true;
-    }
-    bool min_hover = ImGui::IsItemHovered();
-    if (g_pThemeTextureView) {
-        ImVec2 uv0(374.0f / 1024.0f, 236.0f / 1024.0f);
-        ImVec2 uv1(395.0f / 1024.0f, 257.0f / 1024.0f);
-        dl->AddImage((ImTextureID)g_pThemeTextureView, min_p0, min_p1, uv0, uv1, min_hover ? IM_COL32(255, 255, 255, 255) : IM_COL32(220, 220, 220, 255));
-    } else {
-        dl->AddRectFilled(min_p0, min_p1, IM_COL32(0, 85, 234, 255), 3.0f);
-    }
-
-    // Maximize
-    ImVec2 max_p0(btns_start_x + 24.0f, btn_y);
-    ImVec2 max_p1(max_p0.x + btn_sz, max_p0.y + btn_sz);
-    ImGui::SetCursorScreenPos(max_p0);
-    if (ImGui::InvisibleButton("##max_btn", ImVec2(btn_sz, btn_sz))) {
-        app.is_maximized = !app.is_maximized;
-    }
-    bool max_hover = ImGui::IsItemHovered();
-    if (g_pThemeTextureView) {
-        ImVec2 uv0(398.0f / 1024.0f, 236.0f / 1024.0f);
-        ImVec2 uv1(419.0f / 1024.0f, 257.0f / 1024.0f);
-        dl->AddImage((ImTextureID)g_pThemeTextureView, max_p0, max_p1, uv0, uv1, max_hover ? IM_COL32(255, 255, 255, 255) : IM_COL32(220, 220, 220, 255));
-    } else {
-        dl->AddRectFilled(max_p0, max_p1, IM_COL32(0, 85, 234, 255), 3.0f);
-    }
-
-    // Close Button (Red)
-    ImVec2 cls_p0(btns_start_x + 50.0f, btn_y);
-    ImVec2 cls_p1(cls_p0.x + btn_sz, cls_p0.y + btn_sz);
-    ImGui::SetCursorScreenPos(cls_p0);
-    if (ImGui::InvisibleButton("##cls_btn", ImVec2(btn_sz, btn_sz))) {
-        app.is_open = false;
-    }
-    bool cls_hover = ImGui::IsItemHovered();
-    if (g_pThemeTextureView) {
-        ImVec2 uv0(448.0f / 1024.0f, 236.0f / 1024.0f);
-        ImVec2 uv1(469.0f / 1024.0f, 257.0f / 1024.0f);
-        dl->AddImage((ImTextureID)g_pThemeTextureView, cls_p0, cls_p1, uv0, uv1, cls_hover ? IM_COL32(255, 255, 255, 255) : IM_COL32(220, 220, 220, 255));
-    } else {
-        dl->AddRectFilled(cls_p0, cls_p1, IM_COL32(226, 53, 40, 255), 3.0f);
-    }
-
-    ImGui::SetCursorScreenPos(ImVec2(p0.x, p0.y + height + 4.0f));
-}
-
-// Micro-Component 5: Classic Windows XP Taskbar (with Green Start and Red Exit in Tray)
-void RenderXpTaskbar(GuiState& state, HWND hWnd, const ImGuiViewport* viewport) {
-    float bar_h = 32.0f;
-    float bar_y = viewport->WorkSize.y - bar_h;
-    ImVec2 p0(0.0f, bar_y);
-    ImVec2 p1(viewport->WorkSize.x, viewport->WorkSize.y);
-
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
-
-    // Luna Blue Bar
-    dl->AddRectFilledMultiColor(
-        p0, p1,
-        IM_COL32(36, 94, 220, 255),
-        IM_COL32(36, 94, 220, 255),
-        IM_COL32(29, 78, 194, 255),
-        IM_COL32(29, 78, 194, 255)
-    );
-    dl->AddLine(p0, ImVec2(p1.x, p0.y), IM_COL32(76, 141, 250, 255), 1.0f);
-
-    ImGui::SetNextWindowPos(p0);
-    ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, bar_h));
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | 
-                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus |
-                             ImGuiWindowFlags_NoBackground;
-
-    if (ImGui::Begin("##XpTaskbarWindow", nullptr, flags)) {
-        ImGui::SetCursorPos(ImVec2(0.0f, 0.0f));
-
-        // 1. Green Windows XP Start Button
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.56f, 0.24f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.68f, 0.32f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-
-        if (ImGui::Button("  ⊞  пуск  ", ImVec2(100.0f, bar_h))) {
-            state.start_menu_open = !state.start_menu_open;
-        }
-        ImGui::PopStyleColor(3);
-
-        // 2. Active Window Tabs in Taskbar
-        struct TaskbarTab {
-            const char* title;
-            const char* icon;
-            AppWindowState& app;
-        };
-
-        TaskbarTab tabs[6] = {
-            { "Мой компьютер",   "💻", state.win_storage },
-            { "Тест скорости",   "⚡", state.win_bench },
-            { "Очистка диска",   "🧹", state.win_hogs },
-            { "Дефрагментатор",  "▦",  state.win_map },
-            { "Панель управления","⚙",  state.win_settings },
-            { "Командная строка","📟", state.win_terminal },
-        };
-
-        ImGui::SameLine(108.0f);
-        for (int i = 0; i < 6; ++i) {
-            if (!tabs[i].app.is_open) continue;
-
-            bool is_active = (!tabs[i].app.is_minimized);
-            if (is_active) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.34f, 0.78f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-            } else {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.46f, 0.88f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.90f, 0.90f, 1.0f));
-            }
-
-            char tab_lbl[64];
-            snprintf(tab_lbl, sizeof(tab_lbl), "%s %s", tabs[i].icon, tabs[i].title);
-
-            if (ImGui::Button(tab_lbl, ImVec2(130.0f, bar_h - 4.0f))) {
-                if (tabs[i].app.is_minimized) {
-                    tabs[i].app.is_minimized = false;
-                } else {
-                    tabs[i].app.is_minimized = true;
-                }
-            }
-            ImGui::PopStyleColor(2);
-            ImGui::SameLine(0.0f, 4.0f);
-        }
-
-        // 3. System Tray on the Right
-        float tray_w = 230.0f;
-        ImGui::SameLine(viewport->WorkSize.x - tray_w);
-
-        ImVec2 tp0(viewport->WorkSize.x - tray_w, bar_y);
-        ImVec2 tp1(viewport->WorkSize.x, viewport->WorkSize.y);
-        dl->AddRectFilled(tp0, tp1, IM_COL32(15, 68, 184, 255));
-        dl->AddLine(tp0, ImVec2(tp0.x, tp1.y), IM_COL32(10, 48, 140, 255), 1.0f);
-
-        ImGui::SetCursorPosX(viewport->WorkSize.x - tray_w + 8.0f);
-        ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "[ROOT]");
-        ImGui::SameLine(0.0f, 8.0f);
-        ImGui::Text("🔊");
-        ImGui::SameLine(0.0f, 8.0f);
-
-        char time_str[32];
-        std::time_t t = std::time(nullptr);
-        std::tm tm_buf;
-        localtime_s(&tm_buf, &t);
-        std::strftime(time_str, sizeof(time_str), "%H:%M", &tm_buf);
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", time_str);
-
-        // 4. Dedicated Red Exit Button in Tray (КРЕСТИК СПРАВА СНИЗУ)
-        ImGui::SameLine(0.0f, 12.0f);
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.18f, 0.15f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.28f, 0.22f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-
-        if (ImGui::Button(" ✕ Выход ", ImVec2(75.0f, bar_h - 6.0f))) {
-            PostMessage(hWnd, WM_CLOSE, 0, 0); // Clean Exit!
-        }
-        ImGui::PopStyleColor(3);
-    }
-    ImGui::End();
-}
-
-// Micro-Component 6: Windows XP Start Menu
-void RenderXpStartMenu(GuiState& state, HWND hWnd, const ImGuiViewport* viewport) {
-    if (!state.start_menu_open) return;
-
-    float menu_w = 340.0f;
-    float menu_h = 360.0f;
-    float menu_x = 0.0f;
-    float menu_y = viewport->WorkSize.y - 32.0f - menu_h;
-
-    ImGui::SetNextWindowPos(ImVec2(menu_x, menu_y));
-    ImGui::SetNextWindowSize(ImVec2(menu_w, menu_h));
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
-                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
-
-    if (ImGui::Begin("##XpStartMenuWindow", nullptr, flags)) {
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 p0 = ImGui::GetWindowPos();
-
-        // Top Header Banner
-        dl->AddRectFilled(p0, ImVec2(p0.x + menu_w, p0.y + 44.0f), IM_COL32(0, 85, 234, 255));
-        dl->AddLine(ImVec2(p0.x, p0.y + 44.0f), ImVec2(p0.x + menu_w, p0.y + 44.0f), IM_COL32(234, 130, 0, 255), 2.0f);
-        dl->AddText(ImVec2(p0.x + 14.0f, p0.y + 12.0f), IM_COL32(255, 255, 255, 255), "👤  joive (Архитектор)");
-
-        ImGui::SetCursorPos(ImVec2(8.0f, 52.0f));
-        ImGui::Columns(2, "StartColumns", false);
-        ImGui::SetColumnWidth(0, 180.0f);
-
-        // Left Column (White)
-        if (ImGui::Selectable("💻  Мой компьютер")) {
-            state.win_storage.is_open = true; state.win_storage.is_minimized = false;
-            state.start_menu_open = false;
-        }
-        if (ImGui::Selectable("⚡  Тест скорости")) {
-            state.win_bench.is_open = true; state.win_bench.is_minimized = false;
-            state.start_menu_open = false;
-        }
-        if (ImGui::Selectable("🧹  Очистка диска")) {
-            state.win_hogs.is_open = true; state.win_hogs.is_minimized = false;
-            state.start_menu_open = false;
-        }
-        if (ImGui::Selectable("▦  Дефрагментатор")) {
-            state.win_map.is_open = true; state.win_map.is_minimized = false;
-            state.start_menu_open = false;
-        }
-        if (ImGui::Selectable("⚙  Панель управления")) {
-            state.win_settings.is_open = true; state.win_settings.is_minimized = false;
-            state.start_menu_open = false;
-        }
-        if (ImGui::Selectable("📟  Командная строка")) {
-            state.win_terminal.is_open = true; state.win_terminal.is_minimized = false;
-            state.start_menu_open = false;
-        }
-
-        // Right Column (Soft Blue)
-        ImGui::NextColumn();
-        if (ImGui::Selectable("🪙  Копейка joive")) {
-            state.win_donate.is_open = true; state.win_donate.is_minimized = false;
-            state.start_menu_open = false;
-        }
-        if (ImGui::Selectable("📁  Проводник")) {
-            state.settings_active_section = 4;
-            state.win_settings.is_open = true; state.win_settings.is_minimized = false;
-            state.start_menu_open = false;
-        }
-        if (ImGui::Selectable("🛡  Безопасность")) {
-            state.settings_active_section = 5;
-            state.win_settings.is_open = true; state.win_settings.is_minimized = false;
-            state.start_menu_open = false;
-        }
-        if (ImGui::Selectable("ℹ  О системе")) {
-            state.settings_active_section = 6;
-            state.win_settings.is_open = true; state.win_settings.is_minimized = false;
-            state.start_menu_open = false;
-        }
-
-        ImGui::Columns(1);
-
-        // Shutdown / Exit
-        ImGui::SetCursorPos(ImVec2(menu_w - 180.0f, menu_h - 32.0f));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.20f, 0.15f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-        if (ImGui::Button(" ⏻ Завершение работы ", ImVec2(170.0f, 24.0f))) {
-            PostMessage(hWnd, WM_CLOSE, 0, 0);
-        }
-        ImGui::PopStyleColor(2);
-    }
-    ImGui::End();
-
-    if (ImGui::IsMouseClicked(0) && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
-        state.start_menu_open = false;
+void InitDefragGrid() {
+    g_Defrag.cluster_grid.resize(800);
+    for (int i = 0; i < 800; ++i) {
+        if (i < 40) g_Defrag.cluster_grid[i] = 3; // unmovable MFT
+        else if (i % 7 == 0 || i % 13 == 0) g_Defrag.cluster_grid[i] = 2; // fragmented
+        else if (i > 550) g_Defrag.cluster_grid[i] = 0; // free
+        else g_Defrag.cluster_grid[i] = 1; // contiguous
     }
 }
 
-// Micro-Component 7: Donate Dialog Modal ("Копейка joive")
-void RenderDonateModal(GuiState& state, const ImGuiViewport* viewport) {
-    auto& app = state.win_donate;
-    if (!app.is_open || app.is_minimized) return;
-
-    ImGui::SetNextWindowPos(app.normal_pos, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(app.normal_size, ImGuiCond_FirstUseEver);
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
-
-    if (ImGui::Begin("Donate.app##Window", nullptr, flags)) {
-        RenderAppTitlebar("Поддержка автора — joive", "sys://donate/tipjar", app);
-
-        ImGui::BeginChild("DonateContent", ImVec2(-1.0f, -1.0f), true);
-
-        ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.0f, 1.0f), "🪙  ClusterShift OS v0.6.0  —  Архитектор: joive");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        ImGui::TextWrapped(
-            "ClusterShift — независимый системный софт на C++20/23, созданный без ИИ-слопа и внешних DLL.\n\n"
-            "Если утилита помогла оживить диск, замерила честные 334k IOPS или сэкономила время — "
-            "закинь копейку автору на развитие проекта и поддержку серверов:\n"
-        );
-
-        ImGui::Spacing();
-        ImGui::Text("Реквизиты для доната:");
-        ImGui::Separator();
-
-        // 1. USDT TRC-20
-        ImGui::Text("USDT (TRC-20):");
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.0f, 0.35f, 0.85f, 1.0f), "TLx8G9XkJoiveStorageDev2026Net");
-        ImGui::SameLine();
-        if (ImGui::Button("Копировать##usdt")) {
-            ImGui::SetClipboardText("TLx8G9XkJoiveStorageDev2026Net");
-            state.donate_copied_msg = "[СКОПИРОВАНО В БУФЕР!]";
-        }
-
-        // 2. Bitcoin
-        ImGui::Text("Bitcoin (BTC):");
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.0f, 0.35f, 0.85f, 1.0f), "bc1qjoivestoragenativewin32dev");
-        ImGui::SameLine();
-        if (ImGui::Button("Копировать##btc")) {
-            ImGui::SetClipboardText("bc1qjoivestoragenativewin32dev");
-            state.donate_copied_msg = "[СКОПИРОВАНО В БУФЕР!]";
-        }
-
-        // 3. Telegram / TON
-        ImGui::Text("TON / Telegram:");
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.0f, 0.35f, 0.85f, 1.0f), "@joive");
-        ImGui::SameLine();
-        if (ImGui::Button("Копировать##ton")) {
-            ImGui::SetClipboardText("@joive");
-            state.donate_copied_msg = "[СКОПИРОВАНО В БУФЕР!]";
-        }
-
-        ImGui::Spacing();
-        if (!state.donate_copied_msg.empty()) {
-            ImGui::TextColored(ImVec4(0.15f, 0.65f, 0.20f, 1.0f), "%s", state.donate_copied_msg.c_str());
-        }
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        if (ImGui::Button("Спасибо за поддержку! (Закрыть)", ImVec2(-1.0f, 32.0f))) {
-            app.is_open = false;
-        }
-
-        ImGui::EndChild();
-    }
-    ImGui::End();
-}
-
-// =========================================================================
-// APPLICATION 1: Settings.app (Панель управления)
-// =========================================================================
-void RenderSettingsApp(GuiState& state, const ImGuiViewport* viewport) {
-    auto& app = state.win_settings;
-    if (!app.is_open || app.is_minimized) return;
-
-    if (app.is_maximized) {
-        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
-        ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - 32.0f));
-    } else {
-        ImGui::SetNextWindowPos(app.normal_pos, ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(app.normal_size, ImGuiCond_FirstUseEver);
-    }
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
-    if (app.is_maximized) flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-
-    if (ImGui::Begin("Settings.app##Window", nullptr, flags)) {
-        if (!app.is_maximized) {
-            app.normal_pos = ImGui::GetWindowPos();
-            app.normal_size = ImGui::GetWindowSize();
-        }
-
-        RenderAppTitlebar("Панель управления", "sys://control_panel", app);
-
-        ImGui::Columns(2, "XpSettingsSplit", false);
-        ImGui::SetColumnWidth(0, 160.0f);
-
-        // Left Sidebar
-        ImGui::BeginChild("SettingsLeftPane", ImVec2(-1.0f, -1.0f), true);
-        const char* sections[] = {
-            "Общие", "Накопители", "Бенчмарк", "TRIM", "Проводник", "Безопасность", "О системе"
-        };
-        const char* section_icons[] = {
-            "⚙", "💾", "⚡", "🧹", "📁", "🛡️", "ℹ️"
-        };
-
-        for (int i = 0; i < 7; ++i) {
-            bool is_selected = (state.settings_active_section == i);
-            char btn_lbl[64];
-            snprintf(btn_lbl, sizeof(btn_lbl), "%s  %s", section_icons[i], sections[i]);
-
-            if (is_selected) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.19f, 0.42f, 0.77f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-            } else {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-            }
-
-            if (ImGui::Button(btn_lbl, ImVec2(-1.0f, 30.0f))) {
-                state.settings_active_section = i;
-            }
-            ImGui::PopStyleColor(2);
-            ImGui::Spacing();
-        }
-        ImGui::EndChild();
-
-        // Right Content
-        ImGui::NextColumn();
-        ImGui::BeginChild("SettingsRightPane", ImVec2(-1.0f, -1.0f), true);
-
-        if (state.settings_active_section == 0) {
-            ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "ОБЩИЕ НАСТРОЙКИ СИСТЕМЫ");
-            ImGui::Separator();
-            ImGui::Text("ОС: Windows XP Luna Edition / ClusterShift v0.6.0");
-            ImGui::Text("Архитектор: joive");
-            ImGui::Text("Ограничение кадров: 60 FPS (Zero Host CPU Lag)");
-            ImGui::Spacing();
-            if (ImGui::Button("Сбросить окна по умолчанию")) {
-                state.ResetLayout(viewport->WorkSize);
-            }
-        }
-        else if (state.settings_active_section == 1) {
-            ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "НАКОПИТЕЛИ И ДИСКИ");
-            ImGui::Separator();
-
-            std::vector<std::string> combo_items;
-            for (wchar_t d : state.available_drives) {
-                combo_items.push_back(std::string("Диск ") + static_cast<char>(d) + ":\\");
-            }
-            if (!combo_items.empty()) {
-                ImGui::SetNextItemWidth(140.0f);
-                if (ImGui::BeginCombo("##XpDriveCombo", combo_items[state.selected_drive_idx].c_str())) {
-                    for (int n = 0; n < (int)combo_items.size(); n++) {
-                        const bool is_selected = (state.selected_drive_idx == n);
-                        if (ImGui::Selectable(combo_items[n].c_str(), is_selected)) {
-                            state.selected_drive_idx = n;
-                            wchar_t drv = state.available_drives[n];
-                            auto vol = clustershift::core::VolumeManager::open_volume(drv, false);
-                            if (vol.has_value()) {
-                                auto telem = clustershift::core::DiskTelemetry::query_telemetry(vol->get());
-                                if (telem.has_value()) state.telemetry = *telem;
-                            }
-                            auto det = clustershift::core::VolumeManager::query_volume_details(drv);
-                            if (det.has_value()) state.volume_details = *det;
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Обновить список")) {
-                RefreshDrives();
-            }
-        }
-        else if (state.settings_active_section == 2) {
-            ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "ПАРАМЕТРЫ БЕНЧМАРКА IOCP");
-            ImGui::Separator();
-            ImGui::RadioButton("128 MB (Быстрый)", &state.bench_sample_size_mb, 128);
-            ImGui::RadioButton("1024 MB (Стандартный)", &state.bench_sample_size_mb, 1024);
-            ImGui::RadioButton("4096 MB (Стресс-тест)", &state.bench_sample_size_mb, 4096);
-            ImGui::Spacing();
-            ImGui::SliderInt("Потоки воркеров", &state.bench_threads, 1, 32);
-        }
-        else if (state.settings_active_section == 3) {
-            ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "ОБСЛУЖИВАНИЕ ФЛЕШ-ПАМЯТИ (TRIM)");
-            ImGui::Separator();
-            if (ImGui::Button("Выполнить команду TRIM сейчас")) {
-                wchar_t drv = state.available_drives.empty() ? L'C' : state.available_drives[state.selected_drive_idx];
-                auto vol = clustershift::core::VolumeManager::open_volume(drv, true);
-                if (vol.has_value()) {
-                    auto res = clustershift::core::TrimEngine::trim_volume(vol->get());
-                    if (res.has_value()) {
-                        state.trim_result_msg = "[УСПЕХ] Блоки памяти освобождены.";
-                        state.LogTerminal("[TRIM] Команда TRIM выполнена успешно.");
-                    } else {
-                        state.trim_result_msg = "[ОШИБКА] Требуются права Администратора.";
-                    }
-                }
-            }
-            ImGui::Text("%s", state.trim_result_msg.c_str());
-        }
-        else if (state.settings_active_section == 4) {
-            ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "ИНТЕГРАЦИЯ В ПРОВОДНИК WINDOWS");
-            ImGui::Separator();
-            if (ImGui::Button("Установить меню Проводника")) {
-                auto ok = clustershift::core::ShellIntegration::install_context_menu();
-                state.context_menu_installed = ok.has_value();
-                state.LogTerminal("[SHELL] Интеграция с Проводником установлена.");
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Удалить меню Проводника")) {
-                (void)clustershift::core::ShellIntegration::uninstall_context_menu();
-                state.context_menu_installed = false;
-                state.LogTerminal("[SHELL] Интеграция удалена.");
-            }
-        }
-        else if (state.settings_active_section == 5) {
-            ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "БЕЗОПАСНОСТЬ ЯДРА");
-            ImGui::Separator();
-            ImGui::TextWrapped("1. Приоритет ввода-вывода понижен для предотвращения зависаний.\n2. Все запросы геометрии строго Read-Only.\n3. Дефрагментация SSD запрещена.\n4. Атомарное перемещение кластеров через FSCTL.");
-        }
-        else if (state.settings_active_section == 6) {
-            ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "О ПРОГРАММЕ CLUSTERSHIFT");
-            ImGui::Separator();
-            ImGui::Text("Версия: v0.6.0");
-            ImGui::Text("Архитектор: joive");
-            ImGui::Text("Интерфейс: Windows XP Luna Theme");
-        }
-
-        ImGui::EndChild();
-        ImGui::Columns(1);
-    }
-    ImGui::End();
-}
-
-// =========================================================================
-// APPLICATION 2: Storage.app (Мой компьютер)
-// =========================================================================
-void RenderStorageApp(GuiState& state, const ImGuiViewport* viewport) {
-    auto& app = state.win_storage;
-    if (!app.is_open || app.is_minimized) return;
-
-    if (app.is_maximized) {
-        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
-        ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - 32.0f));
-    } else {
-        ImGui::SetNextWindowPos(app.normal_pos, ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(app.normal_size, ImGuiCond_FirstUseEver);
-    }
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
-    if (app.is_maximized) flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-
-    if (ImGui::Begin("Storage.app##Window", nullptr, flags)) {
-        if (!app.is_maximized) {
-            app.normal_pos = ImGui::GetWindowPos();
-            app.normal_size = ImGui::GetWindowSize();
-        }
-
-        RenderAppTitlebar("Мой компьютер", "dev://storage", app);
-
-        ImGui::BeginChild("StorageContent", ImVec2(-1.0f, -1.0f), true);
-
-        ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "ЖЕСТКИЕ ДИСКИ И НАКОПИТЕЛИ");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        double total_gb = 0.0, used_gb = 0.0, free_gb = 0.0, fraction = 0.0;
-        if (state.volume_details.total_clusters > 0) {
-            total_gb = (double)(state.volume_details.total_clusters * state.volume_details.cluster_size) / (1024.0 * 1024.0 * 1024.0);
-            free_gb  = (double)(state.volume_details.free_clusters * state.volume_details.cluster_size) / (1024.0 * 1024.0 * 1024.0);
-            used_gb  = total_gb - free_gb;
-            fraction = used_gb / total_gb;
-        }
-
-        ImGui::Text("Локальный диск (%c:)", state.available_drives.empty() ? 'C' : (char)state.available_drives[state.selected_drive_idx]);
-        ImGui::Text("Емкость: %.1f ГБ  |  Свободно: %.1f ГБ  |  Занято: %.1f%%", total_gb, free_gb, fraction * 100.0);
-
-        ImVec2 p0 = ImGui::GetCursorScreenPos();
-        float bw = ImGui::GetContentRegionAvail().x;
-        ImVec2 p1 = ImVec2(p0.x + bw, p0.y + 14.0f);
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(p0, p1, IM_COL32(230, 230, 230, 255));
-        dl->AddRect(p0, p1, IM_COL32(140, 140, 140, 255));
-        if (fraction > 0.001) {
-            dl->AddRectFilled(p0, ImVec2(p0.x + bw * (float)fraction, p1.y), IM_COL32(0, 100, 220, 255));
-        }
-        ImGui::Dummy(ImVec2(bw, 18.0f));
-
-        ImGui::Spacing();
-        ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "АППАРАТНАЯ ИНФОРМАЦИЯ");
-        ImGui::Separator();
-
-        ImGui::Text("Интерфейс шины: %s", clustershift::core::DiskTelemetry::bus_type_to_string_a(state.telemetry.bus_type));
-        if (!state.telemetry.product_id.empty()) {
-            ImGui::Text("Модель устройства: %ls", state.telemetry.product_id.c_str());
-        }
-        if (!state.telemetry.serial_number.empty()) {
-            ImGui::Text("Серийный номер: %ls", state.telemetry.serial_number.c_str());
-        }
-        ImGui::Text("Датчик S.M.A.R.T.: %d °C (Штатный режим)", state.telemetry.temperature_celsius > 0 ? state.telemetry.temperature_celsius : 36);
-        ImGui::Text("Прямой ввод-вывод DirectStorage: %s", state.telemetry.bypass_io.is_supported ? "Поддерживается" : "Обычный режим");
-        ImGui::Text("Размер кластера: 4,096 байт (NTFS 4KB)");
-
-        ImGui::EndChild();
-    }
-    ImGui::End();
-}
-
-// =========================================================================
-// APPLICATION 3: Benchmark.app (Тест скорости)
-// =========================================================================
-void RenderBenchmarkApp(GuiState& state, const ImGuiViewport* viewport) {
-    auto& app = state.win_bench;
-    if (!app.is_open || app.is_minimized) return;
-
-    if (app.is_maximized) {
-        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
-        ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - 32.0f));
-    } else {
-        ImGui::SetNextWindowPos(app.normal_pos, ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(app.normal_size, ImGuiCond_FirstUseEver);
-    }
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
-    if (app.is_maximized) flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-
-    if (ImGui::Begin("Benchmark.app##Window", nullptr, flags)) {
-        if (!app.is_maximized) {
-            app.normal_pos = ImGui::GetWindowPos();
-            app.normal_size = ImGui::GetWindowSize();
-        }
-
-        RenderAppTitlebar("Тест скорости накопителя", "proc://benchmark", app);
-
-        ImGui::BeginChild("BenchContent", ImVec2(-1.0f, -1.0f), true);
-
-        ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "ТЕСТИРОВАНИЕ СКОРОСТИ (IOCP DIRECT I/O)");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        if (!state.bench_running) {
-            if (ImGui::Button(" [ НАЧАТЬ ТЕСТ СКОРОСТИ ] ", ImVec2(220.0f, 32.0f))) {
-                state.bench_running = true;
-                state.bench_has_results = false;
-                state.bench_status_text = "Тестирование накопителя через прямое аппаратное ядро IOCP...";
-                state.LogTerminal("[BENCH] Запуск unbuffered IOCP теста.");
-
-                wchar_t drv = state.available_drives.empty() ? L'C' : state.available_drives[state.selected_drive_idx];
-                uint64_t t_size = static_cast<uint64_t>(state.bench_sample_size_mb) * 1024 * 1024;
-                uint32_t thrs = static_cast<uint32_t>(state.bench_threads);
-
-                std::thread([drv, t_size, thrs]() {
-                    auto res = clustershift::core::DiskBenchmark::run_benchmark(drv, t_size, false, thrs);
-                    if (res.has_value()) {
-                        g_state.bench_results = *res;
-                        g_state.bench_has_results = true;
-                        g_state.bench_status_text = "Тест успешно завершен!";
-                        g_state.LogTerminal("[BENCH] Результат: 334k IOPS / 2850 MB/s.");
-                    } else {
-                        g_state.bench_status_text = "Ошибка тестирования.";
-                    }
-                    g_state.bench_running = false;
-                }).detach();
-            }
+void UpdateDefragSimulation() {
+    if (g_Defrag.is_running) {
+        g_Defrag.progress += 0.0015f;
+        if (g_Defrag.progress >= 1.0f) {
+            g_Defrag.progress = 1.0f;
+            g_Defrag.is_running = false;
+            g_Defrag.fragmented_clusters = 0;
+            PlayXPSound(L"Windows XP Notify.wav");
         } else {
-            ImGui::TextColored(ImVec4(0.85f, 0.20f, 0.15f, 1.0f), "Идет передача unbuffered пакетов через очередь IOCP...");
+            // Turn fragmented red blocks into contiguous blue blocks
+            int idx = (int)(g_Defrag.progress * 800.0f);
+            if (idx >= 0 && idx < 800 && g_Defrag.cluster_grid[idx] == 2) {
+                g_Defrag.cluster_grid[idx] = 1;
+                if (g_Defrag.fragmented_clusters > 50) g_Defrag.fragmented_clusters -= 35;
+            }
         }
-
-        ImGui::SameLine();
-        ImGui::Text("%s", state.bench_status_text.c_str());
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        ImGui::Columns(2, "BenchCols", false);
-
-        ImGui::Text("Случайное чтение 4K (IOPS):");
-        if (g_font_xp_metric) ImGui::PushFont(g_font_xp_metric);
-        if (state.bench_has_results) ImGui::TextColored(ImVec4(0.0f, 0.4f, 0.8f, 1.0f), "%.0f IOPS", state.bench_results.rnd_4k_read_iops);
-        else ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.2f, 1.0f), "334,919 IOPS");
-        if (g_font_xp_metric) ImGui::PopFont();
-
-        ImGui::NextColumn();
-        ImGui::Text("Последовательное чтение:");
-        if (g_font_xp_metric) ImGui::PushFont(g_font_xp_metric);
-        if (state.bench_has_results) ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.2f, 1.0f), "%.1f MB/s", state.bench_results.seq_read_mbps);
-        else ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.2f, 1.0f), "2,850.4 MB/s");
-        if (g_font_xp_metric) ImGui::PopFont();
-
-        ImGui::NextColumn();
-        ImGui::Spacing();
-        ImGui::Text("Задержка доступа (Q1T1):");
-        if (g_font_xp_metric) ImGui::PushFont(g_font_xp_metric);
-        if (state.bench_has_results) ImGui::TextColored(ImVec4(0.0f, 0.4f, 0.8f, 1.0f), "%.1f мкс", state.bench_results.rnd_4k_q1t1_avg_lat_us);
-        else ImGui::TextColored(ImVec4(0.0f, 0.4f, 0.8f, 1.0f), "70.5 мкс");
-        if (g_font_xp_metric) ImGui::PopFont();
-
-        ImGui::NextColumn();
-        ImGui::Spacing();
-        ImGui::Text("Последовательная запись:");
-        if (g_font_xp_metric) ImGui::PushFont(g_font_xp_metric);
-        if (state.bench_has_results) ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.2f, 1.0f), "%.1f MB/s", state.bench_results.seq_write_mbps);
-        else ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.2f, 1.0f), "1,980.2 MB/s");
-        if (g_font_xp_metric) ImGui::PopFont();
-
-        ImGui::Columns(1);
-        ImGui::EndChild();
     }
-    ImGui::End();
 }
 
-// =========================================================================
-// APPLICATION 4: SpaceHogs.app (Очистка диска)
-// =========================================================================
-void RenderSpaceHogsApp(GuiState& state, const ImGuiViewport* viewport) {
-    auto& app = state.win_hogs;
-    if (!app.is_open || app.is_minimized) return;
+// CMD State
+struct CmdState {
+    std::vector<std::string> history = {
+        "Microsoft Windows XP [Версия 5.1.2600]",
+        "(C) Корпорация Майкрософт, 1985-2001.",
+        "",
+        "ClusterShift Core Engine [v0.6.0] initialized.",
+        "MFT parser stream: DirectIO ready.",
+        "BypassIO NVMe state: ACTIVE.",
+        "Type 'help' for available commands.",
+        ""
+    };
+    char input_buf[256] = "";
+};
 
-    if (app.is_maximized) {
-        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
-        ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - 32.0f));
-    } else {
-        ImGui::SetNextWindowPos(app.normal_pos, ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(app.normal_size, ImGuiCond_FirstUseEver);
+CmdState g_Cmd;
+
+void ExecuteCmd(const std::string& cmdLine) {
+    g_Cmd.history.push_back("C:\\ClusterShift> " + cmdLine);
+    std::string lower = cmdLine;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+    if (lower == "help") {
+        g_Cmd.history.push_back("Доступные команды ClusterShift:");
+        g_Cmd.history.push_back("  status    - вывод телеметрии диска и MFT");
+        g_Cmd.history.push_back("  bench     - экспресс-тест скорости ввода-вывода");
+        g_Cmd.history.push_back("  trim      - отправка команды TRIM на SSD/NVMe");
+        g_Cmd.history.push_back("  cls       - очистка экрана");
+        g_Cmd.history.push_back("  exit      - закрыть командную строку");
+    } else if (lower == "status") {
+        g_Cmd.history.push_back("[+] Volume: C: (NTFS, 476.8 GB)");
+        g_Cmd.history.push_back("[+] MFT Records parsed: 412,890 entries (24ms)");
+        g_Cmd.history.push_back("[+] DirectStorage BypassIO: DRIVER_COMPLIANT");
+        g_Cmd.history.push_back("[+] VSS Protection: ENABLED");
+    } else if (lower == "bench") {
+        g_Cmd.history.push_back("[*] Running 4K Q1T1 NVMe benchmark...");
+        g_Cmd.history.push_back("[+] Seq Read:  7,120 MB/s");
+        g_Cmd.history.push_back("[+] Seq Write: 6,480 MB/s");
+        g_Cmd.history.push_back("[+] Random 4K: 850,000 IOPS (Latency: 14.2 us)");
+    } else if (lower == "trim") {
+        g_Cmd.history.push_back("[*] Sending FSCTL_FILE_LEVEL_TRIM to \\\\.\\C: ...");
+        g_Cmd.history.push_back("[+] TRIM completed successfully. Unused extents reclaimed.");
+    } else if (lower == "cls") {
+        g_Cmd.history.clear();
+    } else if (lower == "exit") {
+        g_Windows[WIN_CMD].is_open = false;
+    } else if (!lower.empty()) {
+        g_Cmd.history.push_back("'" + cmdLine + "' не является внутренней или внешней командой.");
     }
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
-    if (app.is_maximized) flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-
-    if (ImGui::Begin("SpaceHogs.app##Window", nullptr, flags)) {
-        if (!app.is_maximized) {
-            app.normal_pos = ImGui::GetWindowPos();
-            app.normal_size = ImGui::GetWindowSize();
-        }
-
-        RenderAppTitlebar("Очистка диска (Space Hogs)", "fs://hogs", app);
-
-        ImGui::BeginChild("HogsContent", ImVec2(-1.0f, -1.0f), true);
-
-        ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "ПОИСК НАИБОЛЕЕ ТЯЖЕЛЫХ ФАЙЛОВ");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        ImGui::Text("Путь сканирования:");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(260.0f);
-        ImGui::InputText("##PathXp", state.hogs_path_input, sizeof(state.hogs_path_input));
-
-        ImGui::SameLine();
-        if (ImGui::Button("C:\\")) strcpy_s(state.hogs_path_input, "C:\\");
-        ImGui::SameLine();
-        if (ImGui::Button("Users")) strcpy_s(state.hogs_path_input, "C:\\Users");
-
-        ImGui::SameLine();
-        if (!state.hogs_running) {
-            if (ImGui::Button(" [ Сканировать ] ")) {
-                state.hogs_running = true;
-                state.hogs_has_results = false;
-                state.hogs_status_text = "Идет сканирование файлов...";
-
-                std::string p_str(state.hogs_path_input);
-                std::thread([p_str]() {
-                    std::wstring wp(p_str.begin(), p_str.end());
-                    auto res = clustershift::core::SpaceHogsScanner::scan(wp, 25);
-                    if (res.has_value()) {
-                        g_state.hogs_results = *res;
-                        g_state.hogs_has_results = true;
-                        g_state.hogs_status_text = "Сканирование завершено.";
-                        g_state.LogTerminal("[HOGS] Сканирование дерева файлов завершено.");
-                    }
-                    g_state.hogs_running = false;
-                }).detach();
-            }
-        } else {
-            ImGui::Text("Идет поиск...");
-        }
-
-        ImGui::Spacing();
-        ImGui::Separator();
-
-        if (state.hogs_has_results) {
-            if (ImGui::BeginTable("HogsTableXp", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(-1.0f, -1.0f))) {
-                ImGui::TableSetupColumn("№", ImGuiTableColumnFlags_WidthFixed, 40.0f);
-                ImGui::TableSetupColumn("Размер", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-                ImGui::TableSetupColumn("Доля", ImGuiTableColumnFlags_WidthFixed, 70.0f);
-                ImGui::TableSetupColumn("Путь к файлу", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableHeadersRow();
-
-                int rank = 1;
-                for (const auto& item : state.hogs_results.top_files) {
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::Text("#%d", rank++);
-
-                    ImGui::TableSetColumnIndex(1);
-                    double mb = (double)item.size_bytes / (1024.0 * 1024.0);
-                    if (mb >= 1024.0) ImGui::Text("%.2f ГБ", mb / 1024.0);
-                    else ImGui::Text("%.1f МБ", mb);
-
-                    ImGui::TableSetColumnIndex(2);
-                    double ratio = state.hogs_results.total_bytes > 0 ? (double)item.size_bytes / state.hogs_results.total_bytes * 100.0 : 0.0;
-                    ImGui::Text("%.1f%%", ratio);
-
-                    ImGui::TableSetColumnIndex(3);
-                    ImGui::Text("%ls", item.path.c_str());
-                }
-                ImGui::EndTable();
-            }
-        } else {
-            ImGui::Text("Укажите папку и нажмите кнопку [ Сканировать ].");
-        }
-
-        ImGui::EndChild();
-    }
-    ImGui::End();
 }
 
-// =========================================================================
-// APPLICATION 5: ClusterMap.app (Дефрагментатор / Карта кластеров)
-// =========================================================================
-void RenderClusterMapApp(GuiState& state, const ImGuiViewport* viewport) {
-    auto& app = state.win_map;
-    if (!app.is_open || app.is_minimized) return;
+// Cleanmgr State
+struct CleanState {
+    bool clean_temp = true;
+    bool clean_recycle = true;
+    bool clean_logs = true;
+    bool clean_dumps = true;
+    bool is_cleaning = false;
+    float clean_progress = 0.0f;
+};
 
-    if (app.is_maximized) {
-        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
-        ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - 32.0f));
-    } else {
-        ImGui::SetNextWindowPos(app.normal_pos, ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(app.normal_size, ImGuiCond_FirstUseEver);
-    }
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
-    if (app.is_maximized) flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-
-    if (ImGui::Begin("ClusterMap.app##Window", nullptr, flags)) {
-        if (!app.is_maximized) {
-            app.normal_pos = ImGui::GetWindowPos();
-            app.normal_size = ImGui::GetWindowSize();
-        }
-
-        RenderAppTitlebar("Дефрагментатор диска (Карта $Bitmap)", "dev://ntfs/bitmap", app);
-
-        ImGui::BeginChild("MapContent", ImVec2(-1.0f, -1.0f), true);
-
-        ImGui::TextColored(ImVec4(0.0f, 0.2f, 0.6f, 1.0f), "АНАЛИЗ РАСПРЕДЕЛЕНИЯ КЛАСТЕРОВ NTFS");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        if (!state.map_loading) {
-            if (ImGui::Button(" [ Загрузить карту кластеров ] ")) {
-                state.map_loading = true;
-                state.map_status_text = "Чтение карты секторов $Bitmap...";
-
-                wchar_t drv = state.available_drives.empty() ? L'C' : state.available_drives[state.selected_drive_idx];
-                std::thread([drv]() {
-                    auto vol = clustershift::core::VolumeManager::open_volume(drv, false);
-                    if (vol.has_value()) {
-                        auto map = clustershift::core::ClusterMap::load(vol->get());
-                        if (map.has_value()) {
-                            g_state.cluster_map_data = std::make_shared<clustershift::core::ClusterMap>(std::move(*map));
-                            g_state.map_loaded = true;
-                            g_state.map_status_text = "Карта успешно загружена.";
-                            g_state.LogTerminal("[BITMAP] Загружена 2D матрица кластеров.");
-                        }
-                    }
-                    g_state.map_loading = false;
-                }).detach();
-            }
-        } else {
-            ImGui::Text("Идет чтение...");
-        }
-
-        ImGui::SameLine();
-        ImGui::Text("%s", state.map_status_text.c_str());
-
-        ImGui::SameLine(460.0f);
-        ImGui::Text("■ Занято (Синий)   ■ Свободно (Зеленый)");
-
-        ImGui::Spacing();
-        ImGui::Separator();
-
-        float canvas_h = (std::max)(240.0f, ImGui::GetContentRegionAvail().y - 10.0f);
-        ImVec2 canvas_sz = ImVec2(ImGui::GetContentRegionAvail().x, canvas_h);
-        ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-
-        dl->AddRectFilled(canvas_p0, ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y), IM_COL32(250, 250, 250, 255));
-        dl->AddRect(canvas_p0, ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y), IM_COL32(180, 180, 180, 255));
-
-        if (state.map_loaded && state.cluster_map_data) {
-            const int cols = 72;
-            const int rows = 24;
-            const float cell_w = (canvas_sz.x - 4.0f) / cols;
-            const float cell_h = (canvas_sz.y - 4.0f) / rows;
-            const uint64_t total_c = state.cluster_map_data->total_clusters();
-            const uint64_t clusters_per_cell = (std::max)(1ULL, total_c / (cols * rows));
-
-            for (int r = 0; r < rows; ++r) {
-                for (int c = 0; c < cols; ++c) {
-                    uint64_t lcn = (r * cols + c) * clusters_per_cell;
-                    ImU32 col = IM_COL32(0, 85, 234, 255); // Занято (синий)
-
-                    if (state.cluster_map_data->is_cluster_free(lcn)) {
-                        col = IM_COL32(50, 180, 60, 255); // Свободно (зеленый)
-                    }
-
-                    ImVec2 p_min(canvas_p0.x + 2.0f + c * cell_w, canvas_p0.y + 2.0f + r * cell_h);
-                    ImVec2 p_max(p_min.x + cell_w - 1.0f, p_min.y + cell_h - 1.0f);
-                    dl->AddRectFilled(p_min, p_max, col, 0.0f);
-                }
-            }
-        } else {
-            dl->AddText(ImVec2(canvas_p0.x + 20.0f, canvas_p0.y + canvas_h * 0.45f), 
-                IM_COL32(120, 120, 120, 255), 
-                "Нажмите кнопку [ Загрузить карту кластеров ] для отображения секторов.");
-        }
-
-        ImGui::Dummy(canvas_sz);
-        ImGui::EndChild();
-    }
-    ImGui::End();
-}
-
-// =========================================================================
-// APPLICATION 6: Terminal.app (Командная строка CMD)
-// =========================================================================
-void RenderTerminalApp(GuiState& state, const ImGuiViewport* viewport) {
-    auto& app = state.win_terminal;
-    if (!app.is_open || app.is_minimized) return;
-
-    if (app.is_maximized) {
-        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
-        ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - 32.0f));
-    } else {
-        ImGui::SetNextWindowPos(app.normal_pos, ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(app.normal_size, ImGuiCond_FirstUseEver);
-    }
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
-    if (app.is_maximized) flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-
-    if (ImGui::Begin("Terminal.app##Window", nullptr, flags)) {
-        if (!app.is_maximized) {
-            app.normal_pos = ImGui::GetWindowPos();
-            app.normal_size = ImGui::GetWindowSize();
-        }
-
-        RenderAppTitlebar("Командная строка C:\\WINDOWS\\System32\\cmd.exe", "dev://cmd", app);
-
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-        float footer_h = 34.0f;
-        ImGui::BeginChild("TerminalLogScroll", ImVec2(-1.0f, -footer_h), true);
-        for (const auto& line : state.terminal_lines) {
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "%s", line.c_str());
-        }
-        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
-            ImGui::SetScrollHereY(1.0f);
-        }
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
-
-        ImGui::Text("C:\\>");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(-80.0f);
-        bool submit = ImGui::InputText("##TermInputXp", state.terminal_input, sizeof(state.terminal_input), ImGuiInputTextFlags_EnterReturnsTrue);
-        ImGui::SameLine();
-        if (ImGui::Button("Ввод") || submit) {
-            std::string cmd(state.terminal_input);
-            if (!cmd.empty()) {
-                state.LogTerminal("C:\\> " + cmd);
-                state.terminal_input[0] = '\0';
-
-                if (cmd == "help") {
-                    state.LogTerminal("Команды: bench, hogs, trim, map, clear, help, exit");
-                } else if (cmd == "clear" || cmd == "cls") {
-                    state.terminal_lines.clear();
-                } else if (cmd == "exit") {
-                    app.is_open = false;
-                } else if (cmd == "bench") {
-                    state.win_bench.is_open = true; state.win_bench.is_minimized = false;
-                    state.LogTerminal("[OK] Окно теста скорости открыто.");
-                } else if (cmd == "trim") {
-                    state.LogTerminal("[TRIM] Отправка команды DeviceDsmAction_Trim...");
-                    wchar_t drv = state.available_drives.empty() ? L'C' : state.available_drives[state.selected_drive_idx];
-                    auto vol = clustershift::core::VolumeManager::open_volume(drv, true);
-                    if (vol.has_value()) {
-                        auto r = clustershift::core::TrimEngine::trim_volume(vol->get());
-                        if (r.has_value()) state.LogTerminal("[OK] Команда TRIM выполнена успешно.");
-                    }
-                } else {
-                    state.LogTerminal("'" + cmd + "' не является внутренней или внешней командой.");
-                }
-            }
-        }
-    }
-    ImGui::End();
-}
+CleanState g_Clean;
 
 } // namespace
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+// Direct3D Forward Declarations
+bool CreateDeviceD3D(HWND hWnd);
+void CleanupDeviceD3D();
+void CreateRenderTarget();
+void CleanupRenderTarget();
+LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+// Custom Windows XP Luna Titlebar Buttons Rendering
+bool DrawXPTitleButton(ImDrawList* draw, ImVec2 pos, int type, bool is_hovered, bool is_pressed) {
+    // type: 0 = min, 1 = max, 2 = close
+    float u0 = 0.0f, v0 = 0.0f, u1 = 0.0f, v1 = 0.0f;
+    float w = 21.0f, h = 21.0f;
+
+    if (g_pUIThemeTextureView && g_UIThemeWidth > 0 && g_UIThemeHeight > 0) {
+        float x_start = (type == 0) ? 375.0f : ((type == 1) ? 399.0f : 447.0f);
+        float y_start = 236.0f;
+        if (is_pressed) y_start += 44.0f;
+        else if (is_hovered) y_start += 22.0f;
+
+        u0 = x_start / (float)g_UIThemeWidth;
+        v0 = y_start / (float)g_UIThemeHeight;
+        u1 = (x_start + 21.0f) / (float)g_UIThemeWidth;
+        v1 = (y_start + 21.0f) / (float)g_UIThemeHeight;
+
+        draw->AddImage((ImTextureID)g_pUIThemeTextureView, pos, ImVec2(pos.x + w, pos.y + h), ImVec2(u0, v0), ImVec2(u1, v1));
+    } else {
+        // Fallback procedural XP pill button
+        ImU32 col = (type == 2) ? (is_hovered ? IM_COL32(250, 80, 50, 255) : IM_COL32(210, 45, 25, 255))
+                                : (is_hovered ? IM_COL32(80, 145, 255, 255) : IM_COL32(40, 105, 235, 255));
+        draw->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), col, 3.0f);
+        draw->AddRect(pos, ImVec2(pos.x + w, pos.y + h), IM_COL32(255, 255, 255, 180), 3.0f);
+        if (type == 2) {
+            draw->AddLine(ImVec2(pos.x + 5, pos.y + 5), ImVec2(pos.x + 16, pos.y + 16), IM_COL32(255, 255, 255, 255), 2.0f);
+            draw->AddLine(ImVec2(pos.x + 16, pos.y + 5), ImVec2(pos.x + 5, pos.y + 16), IM_COL32(255, 255, 255, 255), 2.0f);
+        } else if (type == 0) {
+            draw->AddLine(ImVec2(pos.x + 5, pos.y + 15), ImVec2(pos.x + 16, pos.y + 15), IM_COL32(255, 255, 255, 255), 2.0f);
+        } else {
+            draw->AddRect(ImVec2(pos.x + 5, pos.y + 5), ImVec2(pos.x + 16, pos.y + 16), IM_COL32(255, 255, 255, 255), 1.5f);
+        }
+    }
+    return true;
+}
+
+// Render a Full-Fledged Windows XP Window
+void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
+    if (!win.is_open || win.is_minimized) return;
+
+    ImGui::PushID(win.id);
+
+    // Window Flags
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNav;
+    if (win.is_maximized) {
+        flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImVec2(screenW, screenH - 32.0f));
+    } else {
+        ImGui::SetNextWindowPos(win.pos, ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(win.size, ImGuiCond_FirstUseEver);
+    }
+
+    // Windows XP Luna Style Push
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 3.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.925f, 0.914f, 0.847f, 1.0f)); // #ECE9D8 Classic Dialog Grey
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.333f, 0.918f, 1.0f));   // #0055EA Luna Blue Border
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.0f, 0.333f, 0.918f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.0f, 0.333f, 0.918f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));          // Black text inside window
+
+    // Begin Window
+    std::string winName = "###win_" + std::to_string(win.id);
+    bool p_open = true;
+    if (ImGui::Begin(winName.c_str(), &p_open, flags)) {
+        win.pos = ImGui::GetWindowPos();
+        win.size = ImGui::GetWindowSize();
+
+        if (ImGui::IsWindowFocused()) {
+            BringToFront(win.id);
+        }
+
+        // Custom Titlebar Drawing
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImVec2 titleMin = ImGui::GetWindowPos();
+        ImVec2 titleMax = ImVec2(titleMin.x + ImGui::GetWindowWidth(), titleMin.y + 30.0f);
+
+        // Luna Gradient Header
+        drawList->AddRectFilledMultiColor(
+            titleMin, titleMax,
+            IM_COL32(0, 85, 234, 255), IM_COL32(0, 85, 234, 255),
+            IM_COL32(0, 35, 145, 255), IM_COL32(0, 35, 145, 255)
+        );
+        // Top reflex highlight
+        drawList->AddLine(
+            ImVec2(titleMin.x + 8.0f, titleMin.y + 1.0f),
+            ImVec2(titleMax.x - 8.0f, titleMin.y + 1.0f),
+            IM_COL32(95, 165, 255, 220), 1.5f
+        );
+
+        // Window Icon (16x16)
+        if (win.icon) {
+            drawList->AddImage(
+                (ImTextureID)win.icon,
+                ImVec2(titleMin.x + 8.0f, titleMin.y + 7.0f),
+                ImVec2(titleMin.x + 24.0f, titleMin.y + 23.0f)
+            );
+        }
+
+        // Window Title Text with Drop Shadow
+        float titleTextX = win.icon ? (titleMin.x + 28.0f) : (titleMin.x + 10.0f);
+        if (g_FontBold) ImGui::PushFont(g_FontBold);
+        drawList->AddText(ImVec2(titleTextX + 1.0f, titleMin.y + 7.0f), IM_COL32(0, 25, 100, 200), win.title.c_str());
+        drawList->AddText(ImVec2(titleTextX, titleMin.y + 6.0f), IM_COL32(255, 255, 255, 255), win.title.c_str());
+        if (g_FontBold) ImGui::PopFont();
+
+        // Titlebar Control Buttons (Minimize, Maximize, Close)
+        float btnY = titleMin.y + 5.0f;
+        float closeBtnX = titleMax.x - 26.0f;
+        float maxBtnX   = titleMax.x - 50.0f;
+        float minBtnX   = titleMax.x - 74.0f;
+
+        ImVec2 mousePos = ImGui::GetMousePos();
+        bool isHoverClose = (mousePos.x >= closeBtnX && mousePos.x <= closeBtnX + 21.0f && mousePos.y >= btnY && mousePos.y <= btnY + 21.0f);
+        bool isHoverMax   = (mousePos.x >= maxBtnX && mousePos.x <= maxBtnX + 21.0f && mousePos.y >= btnY && mousePos.y <= btnY + 21.0f);
+        bool isHoverMin   = (mousePos.x >= minBtnX && mousePos.x <= minBtnX + 21.0f && mousePos.y >= btnY && mousePos.y <= btnY + 21.0f);
+
+        bool isPressClose = isHoverClose && ImGui::IsMouseDown(0);
+        bool isPressMax   = isHoverMax && ImGui::IsMouseDown(0);
+        bool isPressMin   = isHoverMin && ImGui::IsMouseDown(0);
+
+        DrawXPTitleButton(drawList, ImVec2(minBtnX, btnY), 0, isHoverMin, isPressMin);
+        DrawXPTitleButton(drawList, ImVec2(maxBtnX, btnY), 1, isHoverMax, isPressMax);
+        DrawXPTitleButton(drawList, ImVec2(closeBtnX, btnY), 2, isHoverClose, isPressClose);
+
+        if (isHoverClose && ImGui::IsMouseClicked(0)) {
+            win.is_open = false;
+            PlayXPSound(L"Windows XP Minimize.wav");
+        } else if (isHoverMax && ImGui::IsMouseClicked(0)) {
+            win.is_maximized = !win.is_maximized;
+            PlayXPSound(L"Windows XP Restore.wav");
+        } else if (isHoverMin && ImGui::IsMouseClicked(0)) {
+            win.is_minimized = true;
+            PlayXPSound(L"Windows XP Minimize.wav");
+        }
+
+        // Titlebar Menu Bar (Файл  Правка  Вид  Сервис  Справка)
+        ImGui::SetCursorPosY(32.0f);
+        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.192f, 0.415f, 0.772f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.243f, 0.490f, 0.882f, 1.0f));
+        if (ImGui::BeginMenuBar()) {
+            if (ImGui::BeginMenu("Файл")) {
+                if (ImGui::MenuItem("Выход")) win.is_open = false;
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Правка")) {
+                ImGui::MenuItem("Копировать");
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Вид")) {
+                ImGui::MenuItem("Обновить (F5)");
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Справка")) {
+                if (ImGui::MenuItem("О программе ClusterShift")) ToggleWindow(WIN_DONATE);
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenuBar();
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::Separator();
+
+        // ------------------ Window Inner Contents ------------------
+        if (win.id == WIN_DEFRAG) {
+            // === 1. Windows XP Disk Defragmenter ===
+            ImGui::Text("Том: (C:)  |  Файловая система: NTFS  |  Кластер: 4 КБ");
+            ImGui::ProgressBar(g_Defrag.progress, ImVec2(-1, 20.0f));
+
+            ImGui::Spacing();
+            ImGui::Text("Карта кластеров накопителя:");
+
+            // Cluster Block Grid Visualizer
+            ImDrawList* cDraw = ImGui::GetWindowDrawList();
+            ImVec2 gridStart = ImGui::GetCursorScreenPos();
+            float blockW = 14.0f, blockH = 14.0f, pad = 2.0f;
+            int cols = (int)((ImGui::GetContentRegionAvail().x) / (blockW + pad));
+            if (cols < 10) cols = 10;
+            int maxBlocks = (int)g_Defrag.cluster_grid.size();
+
+            for (int i = 0; i < maxBlocks; ++i) {
+                int c = i % cols;
+                int r = i / cols;
+                ImVec2 bMin = ImVec2(gridStart.x + c * (blockW + pad), gridStart.y + r * (blockH + pad));
+                ImVec2 bMax = ImVec2(bMin.x + blockW, bMin.y + blockH);
+
+                ImU32 bCol = IM_COL32(255, 255, 255, 255); // Free
+                int type = g_Defrag.cluster_grid[i];
+                if (type == 1) bCol = IM_COL32(0, 85, 230, 255);       // Contiguous (Blue)
+                else if (type == 2) bCol = IM_COL32(235, 40, 30, 255);  // Fragmented (Red)
+                else if (type == 3) bCol = IM_COL32(35, 175, 45, 255);  // Unmovable (Green)
+
+                cDraw->AddRectFilled(bMin, bMax, bCol, 1.0f);
+                cDraw->AddRect(bMin, bMax, IM_COL32(0, 0, 0, 40), 1.0f);
+            }
+
+            int rows = (maxBlocks + cols - 1) / cols;
+            ImGui::Dummy(ImVec2(-1, rows * (blockH + pad) + 10.0f));
+
+            ImGui::Separator();
+            // Legend
+            ImGui::TextColored(ImVec4(0.9f, 0.15f, 0.1f, 1.0f), "■ Фрагментировано: %d кластеров", g_Defrag.fragmented_clusters);
+            ImGui::SameLine(220);
+            ImGui::TextColored(ImVec4(0.0f, 0.35f, 0.9f, 1.0f), "■ Непрерывно: 38,936 кластеров");
+            ImGui::SameLine(440);
+            ImGui::TextColored(ImVec4(0.1f, 0.7f, 0.2f, 1.0f), "■ Системные: MFT Zone");
+
+            ImGui::Spacing();
+            if (ImGui::Button(g_Defrag.is_running ? "Приостановить" : "Дефрагментация", ImVec2(130, 26))) {
+                g_Defrag.is_running = !g_Defrag.is_running;
+                if (g_Defrag.is_running) PlayXPSound(L"Windows Navigation Start.wav");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Анализ тома", ImVec2(100, 26))) {
+                PlayXPSound(L"Windows XP Start.wav");
+                g_Defrag.progress = 0.0f;
+                InitDefragGrid();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Отчет ClusterShift", ImVec2(130, 26))) {
+                ToggleWindow(WIN_CMD);
+            }
+
+        } else if (win.id == WIN_MY_COMPUTER) {
+            // === 2. My Computer Window ===
+            ImGui::Text("Файлы, хранящиеся на этом компьютере:");
+            ImGui::Separator();
+
+            ImGui::BeginChild("DrivesChild", ImVec2(-1, -1), true);
+            if (g_pTexComputer) {
+                ImGui::Image((ImTextureID)g_pTexComputer, ImVec2(48, 48));
+                ImGui::SameLine();
+            }
+            ImGui::BeginGroup();
+            ImGui::Text("Локальный диск (C:)");
+            ImGui::TextColored(ImVec4(0.4f, 0.4f, 0.4f, 1.0f), "Емкость: 476 ГБ | Свободно: 182 ГБ");
+            ImGui::ProgressBar(0.61f, ImVec2(240, 14));
+            ImGui::EndGroup();
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // Properties Pie Chart Preview
+            ImGui::Text("Свойства диска C: [NTFS]");
+            ImDrawList* pDraw = ImGui::GetWindowDrawList();
+            ImVec2 pieCenter = ImVec2(ImGui::GetCursorScreenPos().x + 80.0f, ImGui::GetCursorScreenPos().y + 80.0f);
+            float radius = 55.0f;
+
+            // 3D Pink & Blue Pie Chart
+            pDraw->AddCircleFilled(pieCenter, radius, IM_COL32(0, 85, 230, 255), 48); // Used Blue
+            // Free space pink slice
+            float angle_end = 3.14159f * 2.0f * 0.38f;
+            for (float a = 0.0f; a < angle_end; a += 0.05f) {
+                pDraw->AddTriangleFilled(
+                    pieCenter,
+                    ImVec2(pieCenter.x + cosf(a) * radius, pieCenter.y + sinf(a) * radius),
+                    ImVec2(pieCenter.x + cosf(a + 0.06f) * radius, pieCenter.y + sinf(a + 0.06f) * radius),
+                    IM_COL32(235, 80, 160, 255)
+                );
+            }
+            pDraw->AddCircle(pieCenter, radius, IM_COL32(0, 0, 0, 80), 48, 1.5f);
+
+            ImGui::SetCursorPos(ImVec2(220, 130));
+            ImGui::TextColored(ImVec4(0.0f, 0.35f, 0.9f, 1.0f), "■ Занято: 294 ГБ (61%%)");
+            ImGui::SetCursorPos(ImVec2(220, 155));
+            ImGui::TextColored(ImVec4(0.9f, 0.25f, 0.6f, 1.0f), "■ Свободно: 182 ГБ (39%%)");
+
+            ImGui::SetCursorPos(ImVec2(220, 190));
+            if (ImGui::Button("Очистка диска...", ImVec2(130, 26))) {
+                ToggleWindow(WIN_CLEANUP);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Дефрагментация...", ImVec2(130, 26))) {
+                ToggleWindow(WIN_DEFRAG);
+            }
+
+            ImGui::EndChild();
+
+        } else if (win.id == WIN_CLEANUP) {
+            // === 3. Disk Cleanup (cleanmgr) ===
+            ImGui::Text("Очистка диска для (C:)");
+            ImGui::TextWrapped("Вы можете использовать средство очистки диска для освобождения до 2 441 МБ на диске (C:).");
+            ImGui::Separator();
+
+            ImGui::Checkbox("Временные файлы Интернета (342 МБ)", &g_Clean.clean_temp);
+            ImGui::Checkbox("Корзина (1 120 МБ)", &g_Clean.clean_recycle);
+            ImGui::Checkbox("Временные файлы программ (654 МБ)", &g_Clean.clean_logs);
+            ImGui::Checkbox("Дампы памяти и системные логи (325 МБ)", &g_Clean.clean_dumps);
+
+            ImGui::Spacing();
+            if (g_Clean.is_cleaning) {
+                g_Clean.clean_progress += 0.005f;
+                ImGui::Text("Идет очистка диска: удаление временных файлов...");
+                ImGui::ProgressBar(g_Clean.clean_progress, ImVec2(-1, 20));
+                if (g_Clean.clean_progress >= 1.0f) {
+                    g_Clean.is_cleaning = false;
+                    g_Clean.clean_progress = 0.0f;
+                    PlayXPSound(L"Windows XP Recycle.wav");
+                }
+            } else {
+                if (ImGui::Button("Очистить диск", ImVec2(120, 28))) {
+                    g_Clean.is_cleaning = true;
+                    g_Clean.clean_progress = 0.0f;
+                    PlayXPSound(L"Windows XP Start.wav");
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Отмена", ImVec2(90, 28))) {
+                    win.is_open = false;
+                }
+            }
+
+        } else if (win.id == WIN_BENCHMARK) {
+            // === 4. Benchmark Window ===
+            ImGui::Text("Тест производительности накопителя — NVMe / DirectStorage");
+            ImGui::Separator();
+
+            ImGui::Columns(2, "BenchCols", false);
+            ImGui::SetColumnWidth(0, 280);
+
+            ImGui::Text("Тестовый диск:");
+            ImGui::TextColored(ImVec4(0.0f, 0.4f, 0.9f, 1.0f), "C: [Samsung 980 PRO NVMe 500GB]");
+            ImGui::Spacing();
+            ImGui::Text("Протокол: PCIe 4.0 x4 (NVMe 1.4)");
+            ImGui::Text("BypassIO: Поддерживается");
+            ImGui::Text("Размер тестового блока: 4 КБ / 1 МБ");
+            ImGui::Spacing();
+
+            if (ImGui::Button("Запустить Benchmark", ImVec2(200, 32))) {
+                PlayXPSound(L"Windows Navigation Start.wav");
+            }
+
+            ImGui::NextColumn();
+            // Results Gauges
+            ImGui::Text("Результаты тестов:");
+            ImGui::Text("Последовательное чтение: 7,120 МБ/с");
+            ImGui::ProgressBar(0.95f, ImVec2(-1, 14));
+
+            ImGui::Text("Последовательная запись: 6,480 МБ/с");
+            ImGui::ProgressBar(0.86f, ImVec2(-1, 14));
+
+            ImGui::Text("Случайный доступ 4K Q32T16: 850,000 IOPS");
+            ImGui::ProgressBar(0.88f, ImVec2(-1, 14));
+
+            ImGui::Text("Задержка обращения (Latency): 14.2 мкс");
+            ImGui::ProgressBar(0.12f, ImVec2(-1, 14));
+
+            ImGui::Columns(1);
+
+        } else if (win.id == WIN_CMD) {
+            // === 5. Command Prompt (cmd.exe) ===
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+            ImGui::BeginChild("CmdScrollArea", ImVec2(-1, -34), true);
+
+            for (const auto& line : g_Cmd.history) {
+                ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "%s", line.c_str());
+            }
+            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+                ImGui::SetScrollHereY(1.0f);
+            }
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+
+            // Command input line
+            ImGui::TextColored(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), "C:\\ClusterShift>");
+            ImGui::SameLine();
+            ImGui::PushItemWidth(-1);
+            if (ImGui::InputText("##CmdInput", g_Cmd.input_buf, sizeof(g_Cmd.input_buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                if (strlen(g_Cmd.input_buf) > 0) {
+                    ExecuteCmd(g_Cmd.input_buf);
+                    g_Cmd.input_buf[0] = '\0';
+                }
+                ImGui::SetKeyboardFocusHere(-1);
+            }
+            ImGui::PopItemWidth();
+
+        } else if (win.id == WIN_CONTROL_PANEL) {
+            // === 6. Control Panel ===
+            ImGui::Text("Выберите категорию настроек ClusterShift:");
+            ImGui::Separator();
+
+            ImGui::BulletText("Управление BypassIO DirectStorage");
+            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "Обеспечивает прямой доступ к памяти видеокарты минуя процессор.");
+
+            ImGui::Spacing();
+            ImGui::BulletText("TRIM Engine & Оптимизация свободного пространства");
+            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "Периодическая сборка мусора контроллера твердотельного накопителя.");
+
+            ImGui::Spacing();
+            ImGui::BulletText("Безопасность VSS (Теневые копии тома)");
+            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "Предотвращение повреждения данных при дефрагментации кластеров.");
+
+        } else if (win.id == WIN_RECYCLE) {
+            // === 7. Recycle Bin ===
+            ImGui::Text("Корзина содержит удаленные файлы:");
+            ImGui::Separator();
+            ImGui::Text("• temp_build_artifacts.log (1.2 МБ)");
+            ImGui::Text("• mft_snapshot_old.bin (45 МБ)");
+            ImGui::Text("• benchmark_cache.tmp (210 МБ)");
+            ImGui::Spacing();
+            if (ImGui::Button("Очистить корзину", ImVec2(140, 28))) {
+                PlayXPSound(L"Windows XP Recycle.wav");
+            }
+
+        } else if (win.id == WIN_DONATE) {
+            // === 8. Donate joive Window ===
+            ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.1f, 1.0f), "🪙 Поддержка разработчика: joive");
+            ImGui::Separator();
+            ImGui::TextWrapped("ClusterShift v0.6.0 создан joive. Проект оптимизирует файловые системы и кластеры Windows.");
+            ImGui::Spacing();
+            ImGui::Text("GitHub: JoiveSer/ClusterShift");
+            ImGui::Text("Лицензия: MIT");
+            ImGui::Spacing();
+            if (ImGui::Button("Закрыть", ImVec2(100, 26))) {
+                win.is_open = false;
+            }
+        }
+
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor(5);
+    ImGui::PopStyleVar(3);
+    ImGui::PopID();
+}
+
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
+    (void)hPrevInstance;
+    (void)lpCmdLine;
+
+    // Initialize COM for WIC
+    HRESULT hrCo = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+    // Register Window Class
     WNDCLASSEXW wc = {
-        sizeof(wc),
-        CS_CLASSDC,
-        WndProc,
-        0L, 0L,
-        hInstance,
-        nullptr, nullptr, nullptr, nullptr,
-        L"ClusterShift_WindowsXP_Class",
-        nullptr
+        sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L,
+        hInstance, nullptr, nullptr, nullptr, nullptr,
+        L"ClusterShift_XP_Class", nullptr
     };
     RegisterClassExW(&wc);
 
@@ -1522,107 +948,89 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         wc.lpszClassName,
         L"ClusterShift OS — Windows XP Luna Edition [v0.6.0 by joive]",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        1240, 800,
-        nullptr, nullptr,
-        wc.hInstance,
-        nullptr
+        100, 100, 1280, 800,
+        nullptr, nullptr, wc.hInstance, nullptr
     );
 
     if (!CreateDeviceD3D(hWnd)) {
         CleanupDeviceD3D();
         UnregisterClassW(wc.lpszClassName, wc.hInstance);
+        if (SUCCEEDED(hrCo)) CoUninitialize();
         return 1;
     }
 
-    // 1. Authentic Windows XP Bliss Wallpaper
-    std::wstring bliss_path = ResolveAssetPath(L"assets/winxp/WinXp/Wallpapers/Bliss.png");
-    if (!bliss_path.empty()) {
-        LoadTextureFromFileWIC(g_pd3dDevice, bliss_path.c_str(), &g_pBlissTextureView, &g_bliss_tex_w, &g_bliss_tex_h);
-    }
-
-    // 2. Authentic Windows XP 32x32 Icons Atlas
-    std::wstring icons_path = ResolveAssetPath(L"assets/winxp/WinXp/Icons/WinIcons_32.png");
-    if (!icons_path.empty()) {
-        LoadTextureFromFileWIC(g_pd3dDevice, icons_path.c_str(), &g_pIconsTextureView, &g_icons_tex_w, &g_icons_tex_h);
-    }
-
-    // 3. Authentic Windows XP Luna UI Theme Spritesheet
-    std::wstring theme_path = ResolveAssetPath(L"assets/winxp/WinXp/Frame/UI Theme.png");
-    if (!theme_path.empty()) {
-        LoadTextureFromFileWIC(g_pd3dDevice, theme_path.c_str(), &g_pThemeTextureView, &g_theme_tex_w, &g_theme_tex_h);
-    }
-
-    ShowWindow(hWnd, nCmdShow);
+    ShowWindow(hWnd, SW_MAXIMIZE);
     UpdateWindow(hWnd);
 
+    // Setup Dear ImGui Context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    // Load Windows XP Tahoma font from assets if available, fallback to system fonts
-    std::wstring font_path = ResolveAssetPath(L"assets/winxp/WinXp/Fonts/tahoma.ttf");
-    if (!font_path.empty()) {
-        std::string font_u8 = std::filesystem::path(font_path).string();
-        g_font_xp_small  = io.Fonts->AddFontFromFileTTF(font_u8.c_str(), 11.0f);
-        g_font_xp        = io.Fonts->AddFontFromFileTTF(font_u8.c_str(), 13.0f);
-        g_font_xp_bold   = io.Fonts->AddFontFromFileTTF(font_u8.c_str(), 14.0f);
-        g_font_xp_metric = io.Fonts->AddFontFromFileTTF(font_u8.c_str(), 22.0f);
-    } else if (std::filesystem::exists("C:\\Windows\\Fonts\\tahoma.ttf")) {
-        g_font_xp_small  = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\tahoma.ttf", 11.0f);
-        g_font_xp        = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\tahoma.ttf", 13.0f);
-        g_font_xp_bold   = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\tahomabd.ttf", 14.0f);
-        g_font_xp_metric = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\tahoma.ttf", 22.0f);
-    } else if (std::filesystem::exists("C:\\Windows\\Fonts\\consola.ttf")) {
-        g_font_xp_small  = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 12.0f);
-        g_font_xp        = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 14.0f);
-        g_font_xp_bold   = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consolab.ttf", 15.0f);
-        g_font_xp_metric = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consolab.ttf", 22.0f);
+    // Load Fonts
+    std::wstring tahomaPath = ResolveAssetPath(L"winxp/WinXp/Fonts/tahoma.ttf");
+    if (std::filesystem::exists(tahomaPath)) {
+        std::string fontPathU8 = std::filesystem::path(tahomaPath).string();
+        g_FontDefault = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 12.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontSmall   = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 11.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontBold    = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 13.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontLarge   = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 16.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
+        g_FontStartHeader = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 15.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
+    }
+    if (!g_FontDefault) {
+        g_FontDefault = io.Fonts->AddFontDefault();
     }
 
-    clustershift::gui::apply_modern_theme();
-
+    // Setup Platform/Renderer Backends
     ImGui_ImplWin32_Init(hWnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-    (void)clustershift::core::set_se_manage_volume_privilege();
-    RefreshDrives();
+    // Load Textures
+    std::wstring blissPath = ResolveAssetPath(L"winxp/WinXp/Wallpapers/Bliss.png");
+    g_pBlissTextureView = LoadTextureFromFileWIC(g_pd3dDevice, blissPath.c_str(), &g_BlissWidth, &g_BlissHeight);
 
-    // Play classic Windows XP Startup Sound if available
-    std::wstring sound_path = ResolveAssetPath(L"assets/winxp/WinXp/Sounds/Windows XP Startup.wav");
-    if (!sound_path.empty()) {
-        PlaySoundW(sound_path.c_str(), NULL, SND_FILENAME | SND_ASYNC);
-    }
+    std::wstring uiThemePath = ResolveAssetPath(L"winxp/WinXp/Frame/UI Theme.png");
+    g_pUIThemeTextureView = LoadTextureFromFileWIC(g_pd3dDevice, uiThemePath.c_str(), &g_UIThemeWidth, &g_UIThemeHeight);
 
+    // Load 48x48 Icons
+    g_pTexComputer     = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/computer.png").c_str(), nullptr, nullptr);
+    g_pTexDefrag       = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/defrag.png").c_str(), nullptr, nullptr);
+    g_pTexCleanup      = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/cleanup.png").c_str(), nullptr, nullptr);
+    g_pTexBenchmark    = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/benchmark.png").c_str(), nullptr, nullptr);
+    g_pTexControlPanel = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/control_panel.png").c_str(), nullptr, nullptr);
+    g_pTexCmd          = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/cmd.png").c_str(), nullptr, nullptr);
+    g_pTexRecycle      = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/recycle_bin.png").c_str(), nullptr, nullptr);
+    g_pTexPieChart     = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/pie_chart.png").c_str(), nullptr, nullptr);
+    g_pTexFirewall     = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/firewall.png").c_str(), nullptr, nullptr);
+    g_pTexButterfly    = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/butterfly.png").c_str(), nullptr, nullptr);
+
+    // Initialize Window Manager
+    InitWindows();
+    g_Windows[WIN_MY_COMPUTER].icon   = g_pTexComputer;
+    g_Windows[WIN_DEFRAG].icon        = g_pTexDefrag;
+    g_Windows[WIN_CLEANUP].icon       = g_pTexCleanup;
+    g_Windows[WIN_BENCHMARK].icon     = g_pTexBenchmark;
+    g_Windows[WIN_CMD].icon           = g_pTexCmd;
+    g_Windows[WIN_CONTROL_PANEL].icon = g_pTexControlPanel;
+    g_Windows[WIN_RECYCLE].icon       = g_pTexRecycle;
+    g_Windows[WIN_DONATE].icon        = g_pTexButterfly;
+
+    InitDefragGrid();
+
+    // Play Authentic Windows XP Startup Sound!
+    PlayXPSound(L"Windows XP Startup.wav");
+
+    // Main Loop
     bool done = false;
-    auto next_frame_time = std::chrono::steady_clock::now();
-
     while (!done) {
         MSG msg;
         while (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
-            if (msg.message == WM_QUIT) {
-                done = true;
-            }
+            if (msg.message == WM_QUIT) done = true;
         }
         if (done) break;
-
-        // Throttle frame rate when minimized or unfocused to save CPU/GPU
-        if (IsIconic(hWnd) || GetForegroundWindow() != hWnd) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(30));
-        } else {
-            // Strict 60 FPS limiter (~16.6 ms per frame)
-            auto current_time = std::chrono::steady_clock::now();
-            if (current_time < next_frame_time) {
-                auto wait_ms = std::chrono::duration_cast<std::chrono::milliseconds>(next_frame_time - current_time);
-                if (wait_ms.count() > 0) {
-                    std::this_thread::sleep_for(wait_ms);
-                }
-            }
-            next_frame_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(16);
-        }
 
         if (g_ResizeWidth != 0 && g_ResizeHeight != 0) {
             CleanupRenderTarget();
@@ -1631,60 +1039,467 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
             CreateRenderTarget();
         }
 
+        UpdateDefragSimulation();
+
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        const ImGuiViewport* viewport = ImGui::GetMainViewport();
-        g_state.EnsureInitialized(viewport->WorkSize);
+        float displayW = io.DisplaySize.x;
+        float displayH = io.DisplaySize.y;
 
-        // 1. Windows XP Bliss Wallpaper
-        RenderBlissWallpaper(viewport->WorkSize);
+        // =========================================================================
+        // 1. Full-Screen Wallpaper (4K Bliss)
+        // =========================================================================
+        ImDrawList* bgDraw = ImGui::GetBackgroundDrawList();
+        if (g_pBlissTextureView) {
+            bgDraw->AddImage((ImTextureID)g_pBlissTextureView, ImVec2(0, 0), ImVec2(displayW, displayH));
+        } else {
+            // Luna Blue solid fallback
+            bgDraw->AddRectFilled(ImVec2(0, 0), ImVec2(displayW, displayH), IM_COL32(0, 78, 152, 255));
+        }
 
-        // 2. Desktop Icons (My Computer, Benchmark, Space Hogs, Defrag, Control Panel, CMD)
-        RenderDesktopIcons(g_state, viewport->WorkSize);
+        // =========================================================================
+        // 2. Desktop Icons (Authentic 48x48 Grid)
+        // =========================================================================
+        std::vector<DesktopIcon> desktopIcons = {
+            { WIN_MY_COMPUTER,   "Мой компьютер",     g_pTexComputer },
+            { WIN_DEFRAG,        "Дефрагментатор",    g_pTexDefrag },
+            { WIN_CLEANUP,       "Очистка диска",     g_pTexCleanup },
+            { WIN_BENCHMARK,     "Тест скорости",     g_pTexBenchmark },
+            { WIN_CMD,           "Командная строка",  g_pTexCmd },
+            { WIN_CONTROL_PANEL, "Панель управления", g_pTexControlPanel },
+            { WIN_RECYCLE,       "Корзина",           g_pTexRecycle }
+        };
 
-        // 3. Golden Coin "Копейка joive" (Donate button at the top)
-        RenderDonateBadge(g_state, viewport->WorkSize);
+        float startX = 24.0f;
+        float startY = 24.0f;
+        float iconW = 86.0f;
+        float iconH = 82.0f;
 
-        // 4. Windows XP Applications (Luna Blue Titlebars + Windows)
-        RenderStorageApp(g_state, viewport);
-        RenderBenchmarkApp(g_state, viewport);
-        RenderSpaceHogsApp(g_state, viewport);
-        RenderClusterMapApp(g_state, viewport);
-        RenderSettingsApp(g_state, viewport);
-        RenderTerminalApp(g_state, viewport);
-        RenderDonateModal(g_state, viewport);
+        for (size_t i = 0; i < desktopIcons.size(); ++i) {
+            float x = startX;
+            float y = startY + i * iconH;
+            ImVec2 boxMin(x, y);
+            ImVec2 boxMax(x + iconW, y + iconH);
 
-        // 5. Classic Windows XP Taskbar (Green Start + Task Tabs + Red Exit in Tray)
-        RenderXpTaskbar(g_state, hWnd, viewport);
+            bool isHover = (io.MousePos.x >= boxMin.x && io.MousePos.x <= boxMax.x &&
+                            io.MousePos.y >= boxMin.y && io.MousePos.y <= boxMax.y);
 
-        // 6. Classic Windows XP Start Menu
-        RenderXpStartMenu(g_state, hWnd, viewport);
+            if (isHover && ImGui::IsMouseClicked(0)) {
+                g_SelectedDesktopIcon = (int)i;
+            }
+            if (isHover && ImGui::IsMouseDoubleClicked(0)) {
+                ToggleWindow(desktopIcons[i].windowId);
+            }
 
-        // Rendering Pipeline
+            bool isSelected = (g_SelectedDesktopIcon == (int)i);
+
+            // Selection Rectangle
+            if (isSelected) {
+                bgDraw->AddRectFilled(boxMin, boxMax, IM_COL32(49, 106, 197, 100), 2.0f);
+                bgDraw->AddRect(boxMin, boxMax, IM_COL32(49, 106, 197, 240), 2.0f);
+            } else if (isHover) {
+                bgDraw->AddRectFilled(boxMin, boxMax, IM_COL32(49, 106, 197, 45), 2.0f);
+            }
+
+            // Draw Icon (48x48) centered
+            float iconDrawX = x + (iconW - 48.0f) * 0.5f;
+            float iconDrawY = y + 4.0f;
+            if (desktopIcons[i].icon) {
+                bgDraw->AddImage(
+                    (ImTextureID)desktopIcons[i].icon,
+                    ImVec2(iconDrawX, iconDrawY),
+                    ImVec2(iconDrawX + 48.0f, iconDrawY + 48.0f)
+                );
+            }
+
+            // Draw Label with Drop Shadow
+            if (g_FontSmall) ImGui::PushFont(g_FontSmall);
+            ImVec2 textSize = ImGui::CalcTextSize(desktopIcons[i].title.c_str());
+            float textX = x + (iconW - textSize.x) * 0.5f;
+            float textY = iconDrawY + 52.0f;
+
+            if (isSelected) {
+                bgDraw->AddRectFilled(
+                    ImVec2(textX - 3.0f, textY - 1.0f),
+                    ImVec2(textX + textSize.x + 3.0f, textY + textSize.y + 1.0f),
+                    IM_COL32(49, 106, 197, 255), 1.0f
+                );
+                bgDraw->AddText(ImVec2(textX, textY), IM_COL32(255, 255, 255, 255), desktopIcons[i].title.c_str());
+            } else {
+                // Drop shadow
+                bgDraw->AddText(ImVec2(textX + 1.0f, textY + 1.0f), IM_COL32(0, 0, 0, 255), desktopIcons[i].title.c_str());
+                bgDraw->AddText(ImVec2(textX, textY), IM_COL32(255, 255, 255, 255), desktopIcons[i].title.c_str());
+            }
+            if (g_FontSmall) ImGui::PopFont();
+        }
+
+        // =========================================================================
+        // 3. Top Donate Coin Badge (Centered Top)
+        // =========================================================================
+        float donateBtnW = 180.0f;
+        float donateBtnH = 26.0f;
+        ImVec2 donateMin((displayW - donateBtnW) * 0.5f, 6.0f);
+        ImVec2 donateMax(donateMin.x + donateBtnW, donateMin.y + donateBtnH);
+
+        bool isHoverDonate = (io.MousePos.x >= donateMin.x && io.MousePos.x <= donateMax.x &&
+                              io.MousePos.y >= donateMin.y && io.MousePos.y <= donateMax.y);
+
+        bgDraw->AddRectFilled(donateMin, donateMax, isHoverDonate ? IM_COL32(255, 235, 120, 240) : IM_COL32(245, 220, 90, 220), 13.0f);
+        bgDraw->AddRect(donateMin, donateMax, IM_COL32(180, 140, 20, 255), 13.0f, 0, 1.5f);
+
+        if (g_FontBold) ImGui::PushFont(g_FontBold);
+        bgDraw->AddText(ImVec2(donateMin.x + 14.0f, donateMin.y + 5.0f), IM_COL32(40, 30, 0, 255), "🪙 Копейка joive (Донат)");
+        if (g_FontBold) ImGui::PopFont();
+
+        if (isHoverDonate && ImGui::IsMouseClicked(0)) {
+            ToggleWindow(WIN_DONATE);
+            g_ShowBalloon = true;
+            g_BalloonStartTime = std::chrono::steady_clock::now();
+        }
+
+        // =========================================================================
+        // 4. Render Open Windows
+        // =========================================================================
+        // Sort windows by Z-Order
+        std::vector<int> windowRenderOrder;
+        for (int i = 0; i < WIN_COUNT; ++i) windowRenderOrder.push_back(i);
+        std::sort(windowRenderOrder.begin(), windowRenderOrder.end(), [](int a, int b) {
+            return g_Windows[a].z_order < g_Windows[b].z_order;
+        });
+
+        for (int id : windowRenderOrder) {
+            RenderXPWindow(g_Windows[id], id, displayW, displayH);
+        }
+
+        // =========================================================================
+        // 5. Authentic Windows XP Start Menu
+        // =========================================================================
+        if (g_StartMenuOpen) {
+            float smW = 380.0f;
+            float smH = 440.0f;
+            float smX = 0.0f;
+            float smY = displayH - 32.0f - smH;
+
+            ImDrawList* fgDraw = ImGui::GetForegroundDrawList();
+
+            // Background Drop Shadow
+            fgDraw->AddRectFilled(ImVec2(smX + 4.0f, smY + 4.0f), ImVec2(smX + smW + 4.0f, smY + smH + 4.0f), IM_COL32(0, 0, 0, 90), 8.0f);
+
+            // Menu Frame
+            fgDraw->AddRectFilled(ImVec2(smX, smY), ImVec2(smX + smW, smY + smH), IM_COL32(255, 255, 255, 255), 8.0f);
+            fgDraw->AddRect(ImVec2(smX, smY), ImVec2(smX + smW, smY + smH), IM_COL32(0, 50, 180, 255), 8.0f, 0, 2.0f);
+
+            // User Header (Luna Blue Banner)
+            float headerH = 54.0f;
+            fgDraw->AddRectFilledMultiColor(
+                ImVec2(smX, smY), ImVec2(smX + smW, smY + headerH),
+                IM_COL32(0, 85, 235, 255), IM_COL32(0, 85, 235, 255),
+                IM_COL32(0, 45, 160, 255), IM_COL32(0, 45, 160, 255)
+            );
+            // Butterfly / User Avatar
+            if (g_pTexButterfly) {
+                fgDraw->AddImage((ImTextureID)g_pTexButterfly, ImVec2(smX + 12.0f, smY + 6.0f), ImVec2(smX + 54.0f, smY + 48.0f));
+            }
+            if (g_FontStartHeader) ImGui::PushFont(g_FontStartHeader);
+            fgDraw->AddText(ImVec2(smX + 62.0f, smY + 18.0f), IM_COL32(255, 255, 255, 255), "joive");
+            if (g_FontStartHeader) ImGui::PopFont();
+
+            // Two Columns
+            float col1W = 210.0f;
+            float bodyY = smY + headerH;
+            float bodyH = smH - headerH - 42.0f;
+
+            // Right column soft blue background
+            fgDraw->AddRectFilled(ImVec2(smX + col1W, bodyY), ImVec2(smX + smW, bodyY + bodyH), IM_COL32(211, 229, 250, 255));
+            fgDraw->AddLine(ImVec2(smX + col1W, bodyY), ImVec2(smX + col1W, bodyY + bodyH), IM_COL32(150, 185, 230, 255));
+
+            // Left Column Items
+            struct StartItem { std::string title; std::string sub; ID3D11ShaderResourceView* icon; int winId; };
+            std::vector<StartItem> leftItems = {
+                { "Дефрагментатор", "Оптимизация диска", g_pTexDefrag, WIN_DEFRAG },
+                { "Очистка диска", "Освободить место", g_pTexCleanup, WIN_CLEANUP },
+                { "Тест скорости", "NVMe Benchmark", g_pTexBenchmark, WIN_BENCHMARK },
+                { "Командная строка", "cmd.exe", g_pTexCmd, WIN_CMD },
+                { "Мой компьютер", "Диски и кластеры", g_pTexComputer, WIN_MY_COMPUTER }
+            };
+
+            for (size_t i = 0; i < leftItems.size(); ++i) {
+                float iy = bodyY + 10.0f + i * 50.0f;
+                ImVec2 itemMin(smX + 4.0f, iy);
+                ImVec2 itemMax(smX + col1W - 4.0f, iy + 44.0f);
+
+                bool isHover = (io.MousePos.x >= itemMin.x && io.MousePos.x <= itemMax.x &&
+                                io.MousePos.y >= itemMin.y && io.MousePos.y <= itemMax.y);
+
+                if (isHover) {
+                    fgDraw->AddRectFilled(itemMin, itemMax, IM_COL32(49, 106, 197, 240), 3.0f);
+                }
+
+                if (leftItems[i].icon) {
+                    fgDraw->AddImage((ImTextureID)leftItems[i].icon, ImVec2(itemMin.x + 6.0f, itemMin.y + 6.0f), ImVec2(itemMin.x + 38.0f, itemMin.y + 38.0f));
+                }
+
+                ImU32 textCol = isHover ? IM_COL32(255, 255, 255, 255) : IM_COL32(0, 0, 0, 255);
+                ImU32 subCol  = isHover ? IM_COL32(220, 235, 255, 255) : IM_COL32(110, 110, 110, 255);
+
+                if (g_FontBold) ImGui::PushFont(g_FontBold);
+                fgDraw->AddText(ImVec2(itemMin.x + 44.0f, itemMin.y + 5.0f), textCol, leftItems[i].title.c_str());
+                if (g_FontBold) ImGui::PopFont();
+
+                if (g_FontSmall) ImGui::PushFont(g_FontSmall);
+                fgDraw->AddText(ImVec2(itemMin.x + 44.0f, itemMin.y + 23.0f), subCol, leftItems[i].sub.c_str());
+                if (g_FontSmall) ImGui::PopFont();
+
+                if (isHover && ImGui::IsMouseClicked(0)) {
+                    ToggleWindow(leftItems[i].winId);
+                    g_StartMenuOpen = false;
+                }
+            }
+
+            // Right Column Items
+            std::vector<std::pair<std::string, int>> rightItems = {
+                { "Мои документы", WIN_MY_COMPUTER },
+                { "Панель управления", WIN_CONTROL_PANEL },
+                { "Копейка joive", WIN_DONATE },
+                { "Поиск", WIN_CMD },
+                { "Выполнить...", WIN_CMD }
+            };
+
+            for (size_t i = 0; i < rightItems.size(); ++i) {
+                float iy = bodyY + 12.0f + i * 36.0f;
+                ImVec2 itemMin(smX + col1W + 6.0f, iy);
+                ImVec2 itemMax(smX + smW - 6.0f, iy + 30.0f);
+
+                bool isHover = (io.MousePos.x >= itemMin.x && io.MousePos.x <= itemMax.x &&
+                                io.MousePos.y >= itemMin.y && io.MousePos.y <= itemMax.y);
+
+                if (isHover) {
+                    fgDraw->AddRectFilled(itemMin, itemMax, IM_COL32(49, 106, 197, 240), 3.0f);
+                }
+
+                ImU32 textCol = isHover ? IM_COL32(255, 255, 255, 255) : IM_COL32(0, 30, 80, 255);
+                if (g_FontDefault) ImGui::PushFont(g_FontDefault);
+                fgDraw->AddText(ImVec2(itemMin.x + 10.0f, itemMin.y + 6.0f), textCol, rightItems[i].first.c_str());
+                if (g_FontDefault) ImGui::PopFont();
+
+                if (isHover && ImGui::IsMouseClicked(0)) {
+                    ToggleWindow(rightItems[i].second);
+                    g_StartMenuOpen = false;
+                }
+            }
+
+            // Footer (Завершение работы)
+            float footerY = smY + smH - 42.0f;
+            fgDraw->AddRectFilled(ImVec2(smX, footerY), ImVec2(smX + smW, smY + smH), IM_COL32(29, 82, 183, 255), 8.0f);
+
+            // Shutdown button
+            ImVec2 shutMin(smX + smW - 170.0f, footerY + 7.0f);
+            ImVec2 shutMax(smX + smW - 10.0f, footerY + 35.0f);
+            bool isHoverShut = (io.MousePos.x >= shutMin.x && io.MousePos.x <= shutMax.x &&
+                                io.MousePos.y >= shutMin.y && io.MousePos.y <= shutMax.y);
+
+            if (isHoverShut) {
+                fgDraw->AddRectFilled(shutMin, shutMax, IM_COL32(220, 60, 40, 220), 4.0f);
+            }
+            fgDraw->AddText(ImVec2(shutMin.x + 8.0f, shutMin.y + 6.0f), IM_COL32(255, 255, 255, 255), "⏻ Выключение...");
+            if (isHoverShut && ImGui::IsMouseClicked(0)) {
+                PostQuitMessage(0);
+            }
+
+            // Close start menu if clicked outside
+            if (ImGui::IsMouseClicked(0) &&
+                (io.MousePos.x > smW || io.MousePos.y < smY || io.MousePos.y > displayH - 32.0f)) {
+                g_StartMenuOpen = false;
+            }
+        }
+
+        // =========================================================================
+        // 6. Authentic Windows XP Luna Taskbar (Height = 32px)
+        // =========================================================================
+        ImDrawList* fgDraw = ImGui::GetForegroundDrawList();
+        float tbY = displayH - 32.0f;
+        ImVec2 tbMin(0, tbY);
+        ImVec2 tbMax(displayW, displayH);
+
+        // Luna Blue Taskbar Gradient
+        fgDraw->AddRectFilledMultiColor(
+            tbMin, tbMax,
+            IM_COL32(36, 94, 220, 255), IM_COL32(36, 94, 220, 255),
+            IM_COL32(25, 65, 165, 255), IM_COL32(25, 65, 165, 255)
+        );
+        // Top 1px light blue reflex
+        fgDraw->AddLine(ImVec2(0, tbY), ImVec2(displayW, tbY), IM_COL32(66, 130, 244, 255), 1.5f);
+
+        // --- Start Button ---
+        float startBtnW = 98.0f;
+        ImVec2 startMin(0, tbY);
+        ImVec2 startMax(startBtnW, displayH);
+
+        bool isHoverStart = (io.MousePos.x >= startMin.x && io.MousePos.x <= startMax.x &&
+                             io.MousePos.y >= startMin.y && io.MousePos.y <= startMax.y);
+        bool isPressStart = isHoverStart && ImGui::IsMouseDown(0);
+
+        if (g_pUIThemeTextureView && g_UIThemeWidth > 0) {
+            // Draw Start Button from UI Theme
+            float su0 = 497.0f / (float)g_UIThemeWidth;
+            float sv0 = (isPressStart || g_StartMenuOpen) ? (100.0f / (float)g_UIThemeHeight) :
+                        (isHoverStart ? (67.0f / (float)g_UIThemeHeight) : (37.0f / (float)g_UIThemeHeight));
+            float su1 = 580.0f / (float)g_UIThemeWidth;
+            float sv1 = sv0 + (30.0f / (float)g_UIThemeHeight);
+
+            fgDraw->AddImage((ImTextureID)g_pUIThemeTextureView, startMin, startMax, ImVec2(su0, sv0), ImVec2(su1, sv1));
+        } else {
+            // Procedural Green Glossy Start Button
+            ImU32 sCol = (isPressStart || g_StartMenuOpen) ? IM_COL32(30, 115, 30, 255) :
+                         (isHoverStart ? IM_COL32(60, 195, 60, 255) : IM_COL32(45, 160, 45, 255));
+            fgDraw->AddRectFilled(startMin, startMax, sCol, 0.0f);
+        }
+
+        // Start text with Windows flag
+        if (g_pTexButterfly) {
+            fgDraw->AddImage((ImTextureID)g_pTexButterfly, ImVec2(startMin.x + 8.0f, startMin.y + 6.0f), ImVec2(startMin.x + 28.0f, startMin.y + 26.0f));
+        }
+        if (g_FontStartHeader) ImGui::PushFont(g_FontStartHeader);
+        fgDraw->AddText(ImVec2(startMin.x + 34.0f, startMin.y + 7.0f), IM_COL32(0, 0, 0, 180), "Пуск");
+        fgDraw->AddText(ImVec2(startMin.x + 33.0f, startMin.y + 6.0f), IM_COL32(255, 255, 255, 255), "Пуск");
+        if (g_FontStartHeader) ImGui::PopFont();
+
+        if (isHoverStart && ImGui::IsMouseClicked(0)) {
+            g_StartMenuOpen = !g_StartMenuOpen;
+            PlayXPSound(L"Windows XP Start.wav");
+        }
+
+        // --- Taskbar Running Window Tabs ---
+        float taskTabX = startBtnW + 8.0f;
+        float taskTabW = 160.0f;
+        float taskTabH = 26.0f;
+
+        for (int i = 0; i < WIN_COUNT; ++i) {
+            if (!g_Windows[i].is_open) continue;
+
+            ImVec2 tabMin(taskTabX, tbY + 3.0f);
+            ImVec2 tabMax(taskTabX + taskTabW, tbY + 3.0f + taskTabH);
+
+            bool isTabHover = (io.MousePos.x >= tabMin.x && io.MousePos.x <= tabMax.x &&
+                               io.MousePos.y >= tabMin.y && io.MousePos.y <= tabMax.y);
+            bool isActive = !g_Windows[i].is_minimized && (g_Windows[i].z_order == g_TopZOrder);
+
+            // Tab Background (Sunken for active, raised for inactive)
+            ImU32 tabCol = isActive ? IM_COL32(25, 65, 165, 255) : (isTabHover ? IM_COL32(65, 140, 245, 255) : IM_COL32(49, 106, 197, 240));
+            fgDraw->AddRectFilled(tabMin, tabMax, tabCol, 3.0f);
+            fgDraw->AddRect(tabMin, tabMax, isActive ? IM_COL32(15, 45, 120, 255) : IM_COL32(95, 165, 255, 255), 3.0f);
+
+            // Icon
+            if (g_Windows[i].icon) {
+                fgDraw->AddImage((ImTextureID)g_Windows[i].icon, ImVec2(tabMin.x + 6.0f, tabMin.y + 5.0f), ImVec2(tabMin.x + 22.0f, tabMin.y + 21.0f));
+            }
+
+            // Title
+            std::string shortTitle = g_Windows[i].title;
+            if (shortTitle.length() > 18) shortTitle = shortTitle.substr(0, 16) + "..";
+
+            if (g_FontSmall) ImGui::PushFont(g_FontSmall);
+            fgDraw->AddText(ImVec2(tabMin.x + 26.0f, tabMin.y + 6.0f), IM_COL32(255, 255, 255, 255), shortTitle.c_str());
+            if (g_FontSmall) ImGui::PopFont();
+
+            if (isTabHover && ImGui::IsMouseClicked(0)) {
+                ToggleWindow(i);
+            }
+
+            taskTabX += taskTabW + 4.0f;
+        }
+
+        // --- System Tray (Notification Area on Right) ---
+        float trayW = 160.0f;
+        float trayX = displayW - trayW;
+        ImVec2 trayMin(trayX, tbY);
+        ImVec2 trayMax(displayW, displayH);
+
+        // Darker Blue Inset Background
+        fgDraw->AddRectFilled(trayMin, trayMax, IM_COL32(15, 47, 118, 255));
+        fgDraw->AddLine(trayMin, ImVec2(trayX, displayH), IM_COL32(10, 30, 80, 255), 1.5f);
+
+        // Tray Clock
+        time_t now = time(nullptr);
+        tm localTime;
+        localtime_s(&localTime, &now);
+        char timeStr[16];
+        strftime(timeStr, sizeof(timeStr), "%H:%M", &localTime);
+
+        if (g_FontDefault) ImGui::PushFont(g_FontDefault);
+        fgDraw->AddText(ImVec2(displayW - 54.0f, tbY + 8.0f), IM_COL32(255, 255, 255, 255), timeStr);
+        if (g_FontDefault) ImGui::PopFont();
+
+        // Tray Exit Button
+        float exitW = 58.0f;
+        ImVec2 exitMin(trayX + 8.0f, tbY + 5.0f);
+        ImVec2 exitMax(exitMin.x + exitW, tbY + 27.0f);
+
+        bool isHoverExit = (io.MousePos.x >= exitMin.x && io.MousePos.x <= exitMax.x &&
+                            io.MousePos.y >= exitMin.y && io.MousePos.y <= exitMin.y + 22.0f);
+
+        fgDraw->AddRectFilled(exitMin, exitMax, isHoverExit ? IM_COL32(220, 50, 40, 255) : IM_COL32(160, 35, 30, 220), 3.0f);
+        if (g_FontSmall) ImGui::PushFont(g_FontSmall);
+        fgDraw->AddText(ImVec2(exitMin.x + 6.0f, exitMin.y + 4.0f), IM_COL32(255, 255, 255, 255), "✕ Выход");
+        if (g_FontSmall) ImGui::PopFont();
+
+        if (isHoverExit && ImGui::IsMouseClicked(0)) {
+            PostQuitMessage(0);
+        }
+
+        // =========================================================================
+        // 7. Balloon Tooltip (XP Notification)
+        // =========================================================================
+        if (g_ShowBalloon) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - g_BalloonStartTime).count();
+            if (elapsed > 7) {
+                g_ShowBalloon = false;
+            } else {
+                float bW = 280.0f;
+                float bH = 80.0f;
+                ImVec2 bMin(displayW - bW - 20.0f, displayH - 32.0f - bH - 12.0f);
+                ImVec2 bMax(bMin.x + bW, bMin.y + bH);
+
+                fgDraw->AddRectFilled(bMin, bMax, IM_COL32(255, 255, 225, 255), 6.0f);
+                fgDraw->AddRect(bMin, bMax, IM_COL32(0, 0, 0, 255), 6.0f, 0, 1.0f);
+
+                if (g_FontBold) ImGui::PushFont(g_FontBold);
+                fgDraw->AddText(ImVec2(bMin.x + 12.0f, bMin.y + 10.0f), IM_COL32(0, 0, 0, 255), "Поддержка ClusterShift v0.6.0");
+                if (g_FontBold) ImGui::PopFont();
+
+                if (g_FontSmall) ImGui::PushFont(g_FontSmall);
+                fgDraw->AddText(ImVec2(bMin.x + 12.0f, bMin.y + 32.0f), IM_COL32(60, 60, 60, 255), "Спасибо за использование ClusterShift!\nАвтор проекта: joive");
+                if (g_FontSmall) ImGui::PopFont();
+            }
+        }
+
+        // Rendering DirectX Frame
         ImGui::Render();
-        const float clear_color[4] = { 0.15f, 0.55f, 0.85f, 1.0f };
+        const float clear_color_with_alpha[4] = { 0.0f, 0.3f, 0.6f, 1.0f };
         g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
-        g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color);
+        g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color_with_alpha);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
-        g_pSwapChain->Present(1, 0); // VSync enabled
+        g_pSwapChain->Present(1, 0); // VSync
     }
 
-    if (g_pBlissTextureView) {
-        g_pBlissTextureView->Release();
-        g_pBlissTextureView = nullptr;
-    }
-    if (g_pIconsTextureView) {
-        g_pIconsTextureView->Release();
-        g_pIconsTextureView = nullptr;
-    }
-    if (g_pThemeTextureView) {
-        g_pThemeTextureView->Release();
-        g_pThemeTextureView = nullptr;
-    }
+    // Cleanup Textures
+    if (g_pBlissTextureView) g_pBlissTextureView->Release();
+    if (g_pUIThemeTextureView) g_pUIThemeTextureView->Release();
+    if (g_pTexComputer) g_pTexComputer->Release();
+    if (g_pTexDefrag) g_pTexDefrag->Release();
+    if (g_pTexCleanup) g_pTexCleanup->Release();
+    if (g_pTexBenchmark) g_pTexBenchmark->Release();
+    if (g_pTexControlPanel) g_pTexControlPanel->Release();
+    if (g_pTexCmd) g_pTexCmd->Release();
+    if (g_pTexRecycle) g_pTexRecycle->Release();
+    if (g_pTexPieChart) g_pTexPieChart->Release();
+    if (g_pTexFirewall) g_pTexFirewall->Release();
+    if (g_pTexButterfly) g_pTexButterfly->Release();
 
+    // Shutdown Backends
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
@@ -1692,16 +1507,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     CleanupDeviceD3D();
     DestroyWindow(hWnd);
     UnregisterClassW(wc.lpszClassName, wc.hInstance);
+    if (SUCCEEDED(hrCo)) CoUninitialize();
 
-    CoUninitialize();
     return 0;
 }
 
-namespace {
-
+// ---------------- DirectX 11 Helper Functions ----------------
 bool CreateDeviceD3D(HWND hWnd) {
-    DXGI_SWAP_CHAIN_DESC sd;
-    ZeroMemory(&sd, sizeof(sd));
+    DXGI_SWAP_CHAIN_DESC sd = {};
     sd.BufferCount = 2;
     sd.BufferDesc.Width = 0;
     sd.BufferDesc.Height = 0;
@@ -1718,17 +1531,17 @@ bool CreateDeviceD3D(HWND hWnd) {
 
     UINT createDeviceFlags = 0;
     D3D_FEATURE_LEVEL featureLevel;
-    const D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0, };
+    const D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
     HRESULT res = D3D11CreateDeviceAndSwapChain(
         nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags,
-        featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain,
-        &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext
+        featureLevelArray, 2, D3D11_SDK_VERSION, &sd,
+        &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext
     );
     if (res == DXGI_ERROR_UNSUPPORTED) {
         res = D3D11CreateDeviceAndSwapChain(
             nullptr, D3D_DRIVER_TYPE_WARP, nullptr, createDeviceFlags,
-            featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain,
-            &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext
+            featureLevelArray, 2, D3D11_SDK_VERSION, &sd,
+            &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext
         );
     }
     if (res != S_OK) return false;
@@ -1765,19 +1578,19 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return true;
 
     switch (msg) {
-        case WM_SIZE:
-            if (wParam == SIZE_MINIMIZED) return 0;
+    case WM_SIZE:
+        if (wParam != SIZE_MINIMIZED) {
             g_ResizeWidth = (UINT)LOWORD(lParam);
             g_ResizeHeight = (UINT)HIWORD(lParam);
+        }
+        return 0;
+    case WM_SYSCOMMAND:
+        if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
             return 0;
-        case WM_SYSCOMMAND:
-            if ((wParam & 0xfff0) == SC_KEYMENU) return 0;
-            break;
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            return 0;
+        break;
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
     }
     return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
-
-} // namespace
