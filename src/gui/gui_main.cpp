@@ -1,5 +1,5 @@
 // language: C++, file: gui_main.cpp, target: Windows 10/11, MSVC, DirectX 11 + Dear ImGui
-// ClusterShift OS — Authentic Windows XP Luna Edition (v0.6.0 by joive)
+// ClusterShift OS  -  Authentic Windows XP Luna Edition (v0.6.0 by joive)
 // 100% Native Windows XP Shell:
 // - Borderless full-screen immersive retro desktop (no Windows 11 titlebar)
 // - Authentic Windows XP Boot Screen animation with moving progress track
@@ -100,7 +100,23 @@ ImFont* g_FontStartHeader = nullptr;
 // --- Internationalization (i18n) Engine ---
 bool g_IsRussian = false;
 
-void DetectLanguage() {
+void UpdateLanguageStrings();
+
+void DetectLanguage(const wchar_t* cmdLine = nullptr) {
+    if (cmdLine) {
+        if (wcsstr(cmdLine, L"--lang en") || wcsstr(cmdLine, L"-lang en") ||
+            wcsstr(cmdLine, L"/lang:en") || wcsstr(cmdLine, L"/lang en") ||
+            wcsstr(cmdLine, L"--en") || wcsstr(cmdLine, L"-en")) {
+            g_IsRussian = false;
+            return;
+        }
+        if (wcsstr(cmdLine, L"--lang ru") || wcsstr(cmdLine, L"-lang ru") ||
+            wcsstr(cmdLine, L"/lang:ru") || wcsstr(cmdLine, L"/lang ru") ||
+            wcsstr(cmdLine, L"--ru") || wcsstr(cmdLine, L"-ru")) {
+            g_IsRussian = true;
+            return;
+        }
+    }
     LANGID userUi = PRIMARYLANGID(GetUserDefaultUILanguage());
     LANGID sysUi = PRIMARYLANGID(GetSystemDefaultUILanguage());
     LANGID userLcid = PRIMARYLANGID(GetUserDefaultLCID());
@@ -109,6 +125,15 @@ void DetectLanguage() {
 
 inline const char* Tr(const char* ru, const char* en) {
     return g_IsRussian ? ru : en;
+}
+
+void SetLanguage(bool isRussian) {
+    g_IsRussian = isRussian;
+    UpdateLanguageStrings();
+}
+
+void ToggleLanguage() {
+    SetLanguage(!g_IsRussian);
 }
 
 // Boot State
@@ -280,13 +305,25 @@ struct XPWindow {
 std::vector<XPWindow> g_Windows;
 int g_TopZOrder = 1;
 
+void UpdateLanguageStrings() {
+    if (g_Windows.size() < WIN_COUNT) return;
+    g_Windows[WIN_MY_COMPUTER].title   = Tr("Мой компьютер", "My Computer");
+    g_Windows[WIN_DEFRAG].title        = Tr("Дефрагментатор диска - ClusterShift", "Disk Defragmenter - ClusterShift");
+    g_Windows[WIN_CLEANUP].title       = Tr("Очистка диска (C:)", "Disk Cleanup (C:)");
+    g_Windows[WIN_BENCHMARK].title     = Tr("Тест скорости накопителя (NVMe/SSD Benchmark)", "Storage Speed Test (NVMe/SSD Benchmark)");
+    g_Windows[WIN_CMD].title           = Tr("Командная строка - clustershift.exe", "Command Prompt - clustershift.exe");
+    g_Windows[WIN_CONTROL_PANEL].title = Tr("Панель управления ClusterShift", "ClusterShift Control Panel");
+    g_Windows[WIN_RECYCLE].title       = Tr("Корзина", "Recycle Bin");
+    g_Windows[WIN_DONATE].title        = Tr("Копейка joive - Поддержка автора", "Support joive - Author Donation");
+}
+
 void InitWindows() {
     g_Windows.resize(WIN_COUNT);
 
     // 1. My Computer
     g_Windows[WIN_MY_COMPUTER] = {
         WIN_MY_COMPUTER,
-        Tr("Мой компьютер", "My Computer"),
+        "",
         nullptr,
         ImVec2(120, 80), ImVec2(640, 480), ImVec2(400, 300),
         false, false, false, // ALL START CLOSED
@@ -297,7 +334,7 @@ void InitWindows() {
     // 2. Disk Defragmenter
     g_Windows[WIN_DEFRAG] = {
         WIN_DEFRAG,
-        Tr("Дефрагментатор диска — ClusterShift", "Disk Defragmenter — ClusterShift"),
+        "",
         nullptr,
         ImVec2(140, 90), ImVec2(780, 530), ImVec2(500, 350),
         false, false, false, // ALL START CLOSED
@@ -308,7 +345,7 @@ void InitWindows() {
     // 3. Disk Cleanup (cleanmgr)
     g_Windows[WIN_CLEANUP] = {
         WIN_CLEANUP,
-        Tr("Очистка диска (C:)", "Disk Cleanup (C:)"),
+        "",
         nullptr,
         ImVec2(220, 120), ImVec2(490, 440), ImVec2(380, 350),
         false, false, false,
@@ -319,7 +356,7 @@ void InitWindows() {
     // 4. Benchmark
     g_Windows[WIN_BENCHMARK] = {
         WIN_BENCHMARK,
-        Tr("Тест скорости накопителя (NVMe/SSD Benchmark)", "Storage Speed Test (NVMe/SSD Benchmark)"),
+        "",
         nullptr,
         ImVec2(180, 90), ImVec2(680, 460), ImVec2(450, 300),
         false, false, false,
@@ -330,7 +367,7 @@ void InitWindows() {
     // 5. Command Prompt (cmd.exe)
     g_Windows[WIN_CMD] = {
         WIN_CMD,
-        Tr("Командная строка — clustershift.exe", "Command Prompt — clustershift.exe"),
+        "",
         nullptr,
         ImVec2(100, 140), ImVec2(660, 420), ImVec2(400, 250),
         false, false, false,
@@ -341,7 +378,7 @@ void InitWindows() {
     // 6. Control Panel
     g_Windows[WIN_CONTROL_PANEL] = {
         WIN_CONTROL_PANEL,
-        Tr("Панель управления ClusterShift", "ClusterShift Control Panel"),
+        "",
         nullptr,
         ImVec2(160, 110), ImVec2(600, 440), ImVec2(420, 300),
         false, false, false,
@@ -352,7 +389,7 @@ void InitWindows() {
     // 7. Recycle Bin
     g_Windows[WIN_RECYCLE] = {
         WIN_RECYCLE,
-        Tr("Корзина", "Recycle Bin"),
+        "",
         nullptr,
         ImVec2(200, 140), ImVec2(520, 380), ImVec2(360, 260),
         false, false, false,
@@ -363,13 +400,15 @@ void InitWindows() {
     // 8. Donate joive
     g_Windows[WIN_DONATE] = {
         WIN_DONATE,
-        Tr("Копейка joive — Поддержка автора", "Support joive — Author Donation"),
+        "",
         nullptr,
         ImVec2(280, 160), ImVec2(460, 320), ImVec2(360, 240),
         false, false, false,
         ImVec2(280, 160), ImVec2(460, 320),
         0
     };
+
+    UpdateLanguageStrings();
 }
 
 void BringToFront(int winId) {
@@ -914,11 +953,11 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
         // ------------------ Window Inner Contents ------------------
         if (win.id == WIN_DEFRAG) {
             // === 1. Windows XP Disk Defragmenter ===
-            ImGui::Text("Том: (C:)  |  Файловая система: NTFS  |  Кластер: %u КБ", g_VolState.cluster_size / 1024);
+            ImGui::Text(Tr("Том: (C:)  |  Файловая система: NTFS  |  Кластер: %u КБ", "Volume: (C:)  |  File System: NTFS  |  Cluster: %u KB"), g_VolState.cluster_size / 1024);
             ImGui::ProgressBar(g_Defrag.progress, ImVec2(-1, 20.0f * scale));
 
             ImGui::Spacing();
-            ImGui::Text("Карта кластеров накопителя:");
+            ImGui::Text("%s", Tr("Карта кластеров накопителя:", "Storage Cluster Allocation Map:"));
 
             // Adaptive Cluster Block Grid Visualizer
             ImDrawList* cDraw = ImGui::GetWindowDrawList();
@@ -1121,9 +1160,9 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             double log_mb  = (double)g_Clean.logs_bytes / (1024.0 * 1024.0);
 
             char tempLabel[128], recLabel[128], logLabel[128];
-            snprintf(tempLabel, sizeof(tempLabel), Tr("Временные файлы (%%TEMP%%) — %.1f МБ", "Temporary files (%%TEMP%%) — %.1f MB"), temp_mb);
-            snprintf(recLabel,  sizeof(recLabel),  Tr("Корзина Windows (%lld файлов) — %.1f МБ", "Windows Recycle Bin (%lld files) — %.1f MB"), (long long)g_Recycle.num_items, rec_mb);
-            snprintf(logLabel,  sizeof(logLabel),  Tr("Кэш системных логов и дампов — %.1f МБ", "System logs and crash dumps — %.1f MB"), log_mb);
+            snprintf(tempLabel, sizeof(tempLabel), Tr("Временные файлы (%%TEMP%%)  -  %.1f МБ", "Temporary files (%%TEMP%%)  -  %.1f MB"), temp_mb);
+            snprintf(recLabel,  sizeof(recLabel),  Tr("Корзина Windows (%lld файлов)  -  %.1f МБ", "Windows Recycle Bin (%lld files)  -  %.1f MB"), (long long)g_Recycle.num_items, rec_mb);
+            snprintf(logLabel,  sizeof(logLabel),  Tr("Кэш системных логов и дампов  -  %.1f МБ", "System logs and crash dumps  -  %.1f MB"), log_mb);
 
             ImGui::Spacing();
             ImGui::Checkbox(tempLabel, &g_Clean.clean_temp);
@@ -1158,7 +1197,7 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
         } else if (win.id == WIN_BENCHMARK) {
             // === 4. Benchmark Window ===
-            ImGui::Text("%s", Tr("Тест производительности накопителя — NVMe / DirectStorage", "Storage Performance Benchmark — NVMe / DirectStorage"));
+            ImGui::Text("%s", Tr("Тест производительности накопителя  -  NVMe / DirectStorage", "Storage Performance Benchmark  -  NVMe / DirectStorage"));
             ImGui::Separator();
 
             float availW = ImGui::GetContentRegionAvail().x;
@@ -1198,10 +1237,10 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
                 snprintf(rndI, sizeof(rndI), Tr("Случайный доступ 4K QD32: %.0f IOPS", "Random Read 4KB QD32: %.0f IOPS"), g_Bench.metrics.rnd_4k_read_iops);
                 snprintf(latL, sizeof(latL), Tr("Задержка обращения (Latency): %.1f мкс", "Read Latency (Q1T1 4KB): %.1f us"), g_Bench.metrics.rnd_4k_q1t1_avg_lat_us);
             } else {
-                snprintf(seqR, sizeof(seqR), Tr("Последовательное чтение: — (нажмите Запустить)", "Sequential Read:  — (click Run Benchmark)"));
-                snprintf(seqW, sizeof(seqW), Tr("Последовательная запись: —", "Sequential Write: —"));
-                snprintf(rndI, sizeof(rndI), Tr("Случайный доступ 4K QD32: —", "Random Read 4KB QD32: —"));
-                snprintf(latL, sizeof(latL), Tr("Задержка обращения (Latency): —", "Read Latency (Q1T1 4KB): —"));
+                snprintf(seqR, sizeof(seqR), Tr("Последовательное чтение:  -  (нажмите Запустить)", "Sequential Read:   -  (click Run Benchmark)"));
+                snprintf(seqW, sizeof(seqW), Tr("Последовательная запись:  - ", "Sequential Write:  - "));
+                snprintf(rndI, sizeof(rndI), Tr("Случайный доступ 4K QD32:  - ", "Random Read 4KB QD32:  - "));
+                snprintf(latL, sizeof(latL), Tr("Задержка обращения (Latency):  - ", "Read Latency (Q1T1 4KB):  - "));
             }
 
             float barH = 16.0f * scale;
@@ -1257,7 +1296,7 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
         } else if (win.id == WIN_CONTROL_PANEL) {
             // === 6. Control Panel ===
-            ImGui::Text("%s", Tr("Панель управления ClusterShift — Конфигурация системы:", "ClusterShift Control Panel — System Configuration:"));
+            ImGui::Text("%s", Tr("Панель управления ClusterShift  -  Конфигурация системы:", "ClusterShift Control Panel  -  System Configuration:"));
             ImGui::Separator();
 
             float availW = ImGui::GetContentRegionAvail().x;
@@ -1295,7 +1334,7 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
             ImGui::Spacing();
             ImGui::BulletText("%s", Tr("Защита VSS (Теневые копии тома):", "VSS Shadow Copy Protection:"));
-            ImGui::TextColored(ImVec4(0.1f, 0.55f, 0.1f, 1.0f), "%s", Tr("АКТИВНА — снимки NTFS защищены от деградации.", "ACTIVE — NTFS snapshots are protected from degradation."));
+            ImGui::TextColored(ImVec4(0.1f, 0.55f, 0.1f, 1.0f), "%s", Tr("АКТИВНА  -  снимки NTFS защищены от деградации.", "ACTIVE  -  NTFS snapshots are protected from degradation."));
 
             ImGui::NextColumn();
             ImGui::BulletText("%s", Tr("TRIM Engine & Сборка мусора SSD:", "TRIM Engine & SSD Garbage Collection:"));
@@ -1380,7 +1419,7 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
     (void)hPrevInstance;
-    (void)lpCmdLine;
+    DetectLanguage(lpCmdLine);
 
     // Initialize COM for WIC
     HRESULT hrCo = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -1400,7 +1439,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     HWND hWnd = CreateWindowExW(
         WS_EX_APPWINDOW,
         wc.lpszClassName,
-        L"ClusterShift OS — Windows XP Luna Edition [v0.6.0 by joive]",
+        L"ClusterShift OS  -  Windows XP Luna Edition [v0.6.0 by joive]",
         WS_POPUP | WS_VISIBLE,
         0, 0, screenW, screenH,
         nullptr, nullptr, wc.hInstance, nullptr
@@ -1422,19 +1461,34 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    // Load Fonts with High-Quality Anti-Aliasing (Smooth, Pleasant Typography)
+    // Load Fonts with High-Quality Anti-Aliasing (Smooth, Pleasant Typography & Comprehensive Glyph Ranges)
+    static const ImWchar custom_glyph_ranges[] = {
+        0x0020, 0x00FF, // Basic Latin + Latin Supplement (including 0xB0 degree sign)
+        0x0400, 0x052F, // Cyrillic + Cyrillic Supplement
+        0x2000, 0x206F, // General Punctuation (dashes, quotes, ellipses, bullets)
+        0x2100, 0x214F, // Letterlike Symbols
+        0x2190, 0x21FF, // Arrows
+        0x2200, 0x22FF, // Mathematical Operators
+        0x25A0, 0x25FF, // Geometric Shapes
+        0x2DE0, 0x2DFF, // Cyrillic Extended-A
+        0xA640, 0xA69F, // Cyrillic Extended-B
+        0,
+    };
+
     std::wstring tahomaPath = ResolveAssetPath(L"winxp/WinXp/Fonts/tahoma.ttf");
     if (std::filesystem::exists(tahomaPath)) {
         std::string fontPathU8 = std::filesystem::path(tahomaPath).string();
         ImFontConfig font_cfg;
         font_cfg.OversampleH = 3;
         font_cfg.OversampleV = 2;
+        font_cfg.PixelSnapH = true;          // Crisp pixel-perfect grid alignment
         font_cfg.RasterizerMultiply = 1.15f; // Crisp, deep black ink
-        g_FontDefault     = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 14.0f, &font_cfg, io.Fonts->GetGlyphRangesCyrillic());
-        g_FontSmall       = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 12.0f, &font_cfg, io.Fonts->GetGlyphRangesCyrillic());
-        g_FontBold        = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 15.0f, &font_cfg, io.Fonts->GetGlyphRangesCyrillic());
-        g_FontLarge       = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 18.0f, &font_cfg, io.Fonts->GetGlyphRangesCyrillic());
-        g_FontStartHeader = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 16.0f, &font_cfg, io.Fonts->GetGlyphRangesCyrillic());
+
+        g_FontDefault     = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 14.0f, &font_cfg, custom_glyph_ranges);
+        g_FontSmall       = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 12.0f, &font_cfg, custom_glyph_ranges);
+        g_FontBold        = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 15.0f, &font_cfg, custom_glyph_ranges);
+        g_FontLarge       = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 18.0f, &font_cfg, custom_glyph_ranges);
+        g_FontStartHeader = io.Fonts->AddFontFromFileTTF(fontPathU8.c_str(), 16.0f, &font_cfg, custom_glyph_ranges);
     }
     if (!g_FontDefault) {
         g_FontDefault = io.Fonts->AddFontDefault();
@@ -1469,7 +1523,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     g_pTexExit         = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/exit.png").c_str(), nullptr, nullptr);
 
     // Initialize Windows Manager (ALL WINDOWS CLOSED BY DEFAULT)
-    DetectLanguage();
     InitWindows();
     g_Windows[WIN_MY_COMPUTER].icon   = g_pTexComputer;
     g_Windows[WIN_DEFRAG].icon        = g_pTexDefrag;
@@ -1512,6 +1565,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+
+        // F10 Global Hotkey: Toggle Language (RU <-> EN)
+        if (ImGui::IsKeyPressed(ImGuiKey_F10)) {
+            ToggleLanguage();
+        }
 
         float displayW = io.DisplaySize.x;
         float displayH = io.DisplaySize.y;
@@ -1609,7 +1667,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             bgDraw->AddRectFilled(ImVec2(0, 0), ImVec2(displayW, displayH), IM_COL32(0, 78, 152, 255));
         }
 
-        // 2. Desktop Apps — Left Column (System Apps)
+        // 2. Desktop Apps  -  Left Column (System Apps)
         struct DesktopIcon {
             int windowId;
             std::string title;
@@ -1678,7 +1736,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             if (g_FontSmall) ImGui::PopFont();
         }
 
-        // 3. Desktop Apps — Bottom-Right Corner: "Копейка joive" and "Выход"
+        // 3. Desktop Apps  -  Bottom-Right Corner: "Копейка joive" and "Выход"
         std::vector<DesktopIcon> rightApps = {
             { WIN_DONATE, Tr("Копейка joive", "Support joive"), g_pTexCoin, false },
             { -1,         Tr("Выход", "Exit"),         g_pTexExit, true }
@@ -1858,21 +1916,35 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
                 }
             }
 
-            // Footer
+            // Footer: System branding & interactive Language Switcher (Single Exit Button is on Desktop)
             float footerY = smY + smH - 42.0f;
             fgDraw->AddRectFilled(ImVec2(smX, footerY), ImVec2(smX + smW, smY + smH), IM_COL32(29, 82, 183, 255), 8.0f);
 
-            ImVec2 shutMin(smX + smW - 170.0f, footerY + 7.0f);
-            ImVec2 shutMax(smX + smW - 10.0f, footerY + 35.0f);
-            bool isHoverShut = (io.MousePos.x >= shutMin.x && io.MousePos.x <= shutMax.x &&
-                                io.MousePos.y >= shutMin.y && io.MousePos.y <= shutMax.y);
+            if (g_FontSmall) ImGui::PushFont(g_FontSmall);
+            fgDraw->AddText(ImVec2(smX + 16.0f, footerY + 12.0f), IM_COL32(200, 225, 255, 200), "ClusterShift v0.6.0");
 
-            if (isHoverShut) {
-                fgDraw->AddRectFilled(shutMin, shutMax, IM_COL32(220, 60, 40, 220), 4.0f);
+            ImVec2 langBtnMin(smX + smW - 175.0f, footerY + 6.0f);
+            ImVec2 langBtnMax(smX + smW - 12.0f, footerY + 36.0f);
+            bool isHoverLang = (io.MousePos.x >= langBtnMin.x && io.MousePos.x <= langBtnMax.x &&
+                                io.MousePos.y >= langBtnMin.y && io.MousePos.y <= langBtnMax.y);
+
+            if (isHoverLang) {
+                fgDraw->AddRectFilled(langBtnMin, langBtnMax, IM_COL32(60, 130, 245, 220), 4.0f);
+                fgDraw->AddRect(langBtnMin, langBtnMax, IM_COL32(255, 255, 255, 200), 4.0f);
+            } else {
+                fgDraw->AddRectFilled(langBtnMin, langBtnMax, IM_COL32(38, 98, 205, 220), 4.0f);
+                fgDraw->AddRect(langBtnMin, langBtnMax, IM_COL32(20, 60, 150, 220), 4.0f);
             }
-            fgDraw->AddText(ImVec2(shutMin.x + 8.0f, shutMin.y + 6.0f), IM_COL32(255, 255, 255, 255), Tr("⏻ Выключение...", "⏻ Turn Off Computer..."));
-            if (isHoverShut && ImGui::IsMouseClicked(0)) {
-                PostQuitMessage(0);
+
+            const char* langLabel = g_IsRussian ? "Язык: RU [F10]" : "Language: EN [F10]";
+            ImVec2 lSize = ImGui::CalcTextSize(langLabel);
+            float lx = langBtnMin.x + ((langBtnMax.x - langBtnMin.x) - lSize.x) * 0.5f;
+            float ly = langBtnMin.y + ((langBtnMax.y - langBtnMin.y) - lSize.y) * 0.5f;
+            fgDraw->AddText(ImVec2(lx, ly), IM_COL32(255, 255, 255, 255), langLabel);
+            if (g_FontSmall) ImGui::PopFont();
+
+            if (isHoverLang && ImGui::IsMouseClicked(0)) {
+                ToggleLanguage();
             }
 
             if (ImGui::IsMouseClicked(0) &&
@@ -1967,8 +2039,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             taskTabX += taskTabW + 4.0f;
         }
 
-        // --- Authentic Windows XP Luna System Tray ---
-        float trayW = 84.0f;
+        // --- Authentic Windows XP Luna System Tray with Language Bar & Clock ---
+        float trayW = 138.0f;
         float trayX = displayW - trayW;
         ImVec2 trayMin(trayX, tbY);
         ImVec2 trayMax(displayW, displayH);
@@ -1985,16 +2057,45 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         // Inset top shadow
         fgDraw->AddLine(ImVec2(trayX, tbY), ImVec2(displayW, tbY), IM_COL32(9, 32, 90, 255), 1.0f);
 
+        // Windows XP Language Indicator Button [ RU ] / [ EN ]
+        ImVec2 langBtnMin(trayX + 8.0f, tbY + 5.0f);
+        ImVec2 langBtnMax(trayX + 46.0f, tbY + 27.0f);
+        bool isHoverTrayLang = (io.MousePos.x >= langBtnMin.x && io.MousePos.x <= langBtnMax.x &&
+                                io.MousePos.y >= langBtnMin.y && io.MousePos.y <= langBtnMax.y);
+
+        if (isHoverTrayLang) {
+            fgDraw->AddRectFilled(langBtnMin, langBtnMax, IM_COL32(40, 110, 230, 220), 2.0f);
+            fgDraw->AddRect(langBtnMin, langBtnMax, IM_COL32(130, 195, 255, 255), 2.0f);
+        } else {
+            fgDraw->AddRectFilled(langBtnMin, langBtnMax, IM_COL32(18, 48, 130, 220), 2.0f);
+            fgDraw->AddRect(langBtnMin, langBtnMax, IM_COL32(10, 32, 95, 255), 2.0f);
+        }
+
+        const char* langCode = g_IsRussian ? "RU" : "EN";
+        if (g_FontSmall) ImGui::PushFont(g_FontSmall);
+        ImVec2 langTextSize = ImGui::CalcTextSize(langCode);
+        float langTextX = langBtnMin.x + ((langBtnMax.x - langBtnMin.x) - langTextSize.x) * 0.5f;
+        float langTextY = langBtnMin.y + ((langBtnMax.y - langBtnMin.y) - langTextSize.y) * 0.5f;
+        fgDraw->AddText(ImVec2(langTextX + 1.0f, langTextY + 1.0f), IM_COL32(0, 0, 0, 150), langCode);
+        fgDraw->AddText(ImVec2(langTextX, langTextY), IM_COL32(255, 255, 255, 255), langCode);
+        if (g_FontSmall) ImGui::PopFont();
+
+        if (isHoverTrayLang && ImGui::IsMouseClicked(0)) {
+            ToggleLanguage();
+        }
+
+        // Clock on the right
         time_t now = time(nullptr);
         tm localTime;
         localtime_s(&localTime, &now);
         char timeStr[16];
         strftime(timeStr, sizeof(timeStr), "%H:%M", &localTime);
 
-        // Center the clock in the tray
         if (g_FontDefault) ImGui::PushFont(g_FontDefault);
         ImVec2 timeSize = ImGui::CalcTextSize(timeStr);
-        float timeX = trayX + (trayW - timeSize.x) * 0.5f;
+        float clockAreaX = trayX + 50.0f;
+        float clockAreaW = displayW - clockAreaX;
+        float timeX = clockAreaX + (clockAreaW - timeSize.x) * 0.5f;
         float timeY = tbY + (32.0f - timeSize.y) * 0.5f;
 
         // Drop shadow for crisp contrast

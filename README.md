@@ -84,6 +84,7 @@ Download and launch `clustershift-gui.exe` (or run `clustershift gui` from termi
 * **Authentic XP Experience:** Classic boot splash animation, startup sound, Bliss wallpaper, and Luna window controls.
 * **Silky 60+ FPS** hardware-accelerated DirectX 11 rendering with high-DPI anti-aliased typography.
 * **0% Idle CPU footprint** via throttled event polling.
+* **Dynamic English / Russian i18n:** Auto-detects OS language. Switch anytime with **F10**, click the **[ RU ] / [ EN ]** taskbar tray indicator or Start Menu footer, or force at launch via `clustershift-gui.exe --lang en` / `--lang ru`.
 * **Interactive Desktop Apps:** My Computer (3D Storage Pie Chart & NTFS telemetry), Speed Benchmark Runner, Disk Cleanup, Defragmenter / TRIM, and Support.
 
 ### Option B: Interactive Console Dashboard (Double-click friendly)
