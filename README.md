@@ -3,7 +3,7 @@
 # ⚡ ClusterShift
 
 **Universal High-Performance Win32 Storage Suite & Hardware Telemetry**  
-*Dual-Binary Architecture (Headless CLI + Modern Dark GUI) • DirectStorage BypassIO Diagnostic • Multi-Threaded IOCP Benchmark*
+*Dual-Binary Architecture (Headless CLI + Authentic Windows XP Luna GUI) • DirectStorage BypassIO Diagnostic • Multi-Threaded IOCP Benchmark*
 
 [![CI Build](https://github.com/JoiveSer/clustershift/actions/workflows/ci.yml/badge.svg)](https://github.com/JoiveSer/clustershift/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/version-v0.6.0-emerald)](https://github.com/JoiveSer/clustershift/releases)
@@ -28,6 +28,10 @@
 
 **[ 📥 Download Latest Release (v0.6.0) ](https://github.com/JoiveSer/clustershift/releases/latest)**
 
+<br/><br/>
+
+![ClusterShift Windows XP Luna GUI](assets/clustershift_xp_gui.png)
+
 </div>
 
 ---
@@ -38,7 +42,7 @@
 
 * 🖥️ **Dual CLI + GUI Distribution:**
   * **Headless CLI (`clustershift.exe`):** Blazing-fast command-line tool with interactive ASCII dashboards, zero overhead, ideal for terminal power users, automation, and CI/CD pipelines.
-  * **Modern Hardware-Accelerated GUI (`clustershift-gui.exe`):** Custom DirectX 11 + Dear ImGui dark obsidian interface. 60+ FPS silky responsiveness with 0% CPU footprint when idle, live drive selector, metric cards, 2D cluster map canvas, and 1-click tools.
+  * **Authentic Windows XP Luna GUI (`clustershift-gui.exe`):** Fullscreen borderless vintage OS desktop powered by DirectX 11 + Dear ImGui. Features the iconic XP boot sequence with moving blue progress blocks, original startup chime, Bliss wallpaper, high-DPI font anti-aliasing, live 3D storage telemetry pie chart, and 0% CPU footprint when idle.
 * ⚡ **Parallel Multi-Threaded IOCP Benchmark (`bench`):** Sector-aligned Direct I/O (`FILE_FLAG_NO_BUFFERING`) backed by Windows I/O Completion Ports (`GetQueuedCompletionStatusEx`) scaling across CPU cores (`Q32Tx`). Breaks past **334,000+ IOPS** and 2.5+ GB/s unbuffered throughput without OS file cache skew.
 * ⏱️ **Sub-Microsecond Latency Profiler (Q1T1):** Measures true single-thread 4KB read latency in microseconds ($\mu\text{s}$) with min, avg, and max metrics—the decisive factor for real-world Windows and gaming asset load times.
 * 🎮 **DirectStorage / BypassIO Telemetry (`health`, `info`):** Queries Windows 11 BypassIO state (`FSCTL_MANAGE_BYPASS_IO`) to determine whether direct NVMe-to-GPU streaming is active or blocked by misconfigured antivirus/backup filter drivers (`.sys`).
@@ -74,12 +78,13 @@
 
 ## 🏁 Quick Start
 
-### Option A: Modern Dark GUI (`clustershift-gui.exe`)
+### Option A: Authentic Windows XP Luna GUI (`clustershift-gui.exe`)
 Download and launch `clustershift-gui.exe` (or run `clustershift gui` from terminal):
 
-* **Silky 60+ FPS** hardware-accelerated DirectX 11 interface with custom obsidian theme.
+* **Authentic XP Experience:** Classic boot splash animation, startup sound, Bliss wallpaper, and Luna window controls.
+* **Silky 60+ FPS** hardware-accelerated DirectX 11 rendering with high-DPI anti-aliased typography.
 * **0% Idle CPU footprint** via throttled event polling.
-* **Interactive Views:** Live Storage Dashboard, Multi-Threaded Benchmark Runner, Space-Hog Table, Interactive Cluster Allocation Canvas, and 1-Click Maintenance.
+* **Interactive Desktop Apps:** My Computer (3D Storage Pie Chart & NTFS telemetry), Speed Benchmark Runner, Disk Cleanup, Defragmenter / TRIM, and Support.
 
 ### Option B: Interactive Console Dashboard (Double-click friendly)
 Double-click `clustershift.exe` or execute without arguments in PowerShell:
