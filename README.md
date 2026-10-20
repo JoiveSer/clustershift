@@ -38,7 +38,7 @@
 
 ## 💡 Overview & Value Proposition
 
-**ClusterShift** is a lightweight, zero-dependency, open-source storage utility engineered in modern C++20/C++23. It ships as a versatile **dual-edition tool**: an ultra-fast headless CLI (`clustershift.exe`, < 430 KB) and a sleek, hardware-accelerated Modern Dark GUI (`clustershift-gui.exe`, < 1 MB):
+**ClusterShift** is a lightweight, zero-dependency, open-source storage utility engineered in modern C++20/C++23. It ships as a versatile **dual-edition tool**: an ultra-fast headless CLI (`clustershift.exe`, < 430 KB) and an authentic, hardware-accelerated Windows XP Luna GUI (`clustershift-gui.exe`, < 1 MB):
 
 * 🖥️ **Dual CLI + GUI Distribution:**
   * **Headless CLI (`clustershift.exe`):** Blazing-fast command-line tool with interactive ASCII dashboards, zero overhead, ideal for terminal power users, automation, and CI/CD pipelines.
