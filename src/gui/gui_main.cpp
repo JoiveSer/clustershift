@@ -468,6 +468,7 @@ struct RealVolumeState {
     int32_t temperature_c = -1;
     bool bypass_io_supported = false;
     std::string bypass_io_status = "DRIVER_COMPLIANT";
+    std::string bypass_io_driver = "";
     bool loaded = false;
 };
 RealVolumeState g_VolState;
@@ -501,7 +502,21 @@ void RefreshVolumeTelemetry() {
             g_VolState.bus_type_str = clustershift::core::DiskTelemetry::bus_type_to_string_a(telem->bus_type);
             g_VolState.temperature_c = telem->temperature_celsius;
             g_VolState.bypass_io_supported = telem->bypass_io.is_supported;
-            g_VolState.bypass_io_status = telem->bypass_io.is_supported ? "SUPPORTED (Active)" : "NOT SUPPORTED (Legacy Stack)";
+            std::string failDriver;
+            for (wchar_t wc : telem->bypass_io.failing_driver) {
+                if (wc >= 32 && wc <= 126) failDriver.push_back(static_cast<char>(wc));
+            }
+            g_VolState.bypass_io_driver = failDriver;
+
+            if (telem->bypass_io.is_supported) {
+                g_VolState.bypass_io_status = "SUPPORTED (Active)";
+            } else if (!failDriver.empty()) {
+                g_VolState.bypass_io_status = "BLOCKED by " + failDriver;
+            } else if (telem->bypass_io.is_filter_blocked) {
+                g_VolState.bypass_io_status = "BLOCKED by Minifilter Driver";
+            } else {
+                g_VolState.bypass_io_status = "NOT SUPPORTED (Legacy Stack)";
+            }
         }
     }
 }
@@ -708,7 +723,7 @@ void InitCmdHistory() {
     g_Cmd.history.push_back("");
     g_Cmd.history.push_back("ClusterShift Core Engine [v0.6.0] initialized.");
     g_Cmd.history.push_back(Tr("Поток парсера MFT: DirectIO готов.", "MFT parser stream: DirectIO ready."));
-    g_Cmd.history.push_back(Tr("Статус BypassIO NVMe: АКТИВЕН.", "BypassIO NVMe state: ACTIVE."));
+    g_Cmd.history.push_back(Tr("Статус BypassIO: Аппаратно готов | Стек: Заблокирован фильтром", "BypassIO state: Hardware Capable | Stack: Blocked (Filter)"));
     g_Cmd.history.push_back(Tr("Введите 'help' для списка доступных команд.", "Type 'help' for available commands."));
     g_Cmd.history.push_back("");
 }
@@ -1216,7 +1231,17 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImGui::TextColored(ImVec4(0.0f, 0.4f, 0.9f, 1.0f), "C: [%s]", g_VolState.product_name.c_str());
             ImGui::Spacing();
             ImGui::Text("%s %s", Tr("Интерфейс:", "Interface:"), g_VolState.bus_type_str.c_str());
-            ImGui::Text("%s %s", Tr("BypassIO DirectStorage:", "BypassIO DirectStorage:"), g_VolState.bypass_io_supported ? Tr("Активен", "Active") : Tr("Не поддерживается", "Unsupported"));
+            std::string bpDisplay;
+            if (g_VolState.bypass_io_supported) {
+                bpDisplay = Tr("Активен (NVMe -> GPU)", "Active (NVMe -> GPU)");
+            } else if (!g_VolState.bypass_io_driver.empty()) {
+                bpDisplay = Tr("Заблокирован (", "Blocked by ") + g_VolState.bypass_io_driver + ")";
+            } else if (g_VolState.bus_type_str.find("NVMe") != std::string::npos) {
+                bpDisplay = Tr("Блок фильтра (WdFilter/volsnap)", "Blocked (Minifilter Driver)");
+            } else {
+                bpDisplay = Tr("Не поддерживается накопителем", "Hardware Unsupported");
+            }
+            ImGui::Text("%s %s", Tr("BypassIO DirectStorage:", "BypassIO DirectStorage:"), bpDisplay.c_str());
             ImGui::Text("%s", Tr("Размер теста: 128 МБ (Quick IOCP)", "Sample Size: 128 MB (Quick IOCP)"));
             ImGui::Spacing();
 
