@@ -101,6 +101,7 @@ ImFont* g_FontStartHeader = nullptr;
 bool g_IsRussian = false;
 
 void UpdateLanguageStrings();
+void InitCmdHistory();
 
 void DetectLanguage(const wchar_t* cmdLine = nullptr) {
     if (cmdLine) {
@@ -315,6 +316,8 @@ void UpdateLanguageStrings() {
     g_Windows[WIN_CONTROL_PANEL].title = Tr("Панель управления ClusterShift", "ClusterShift Control Panel");
     g_Windows[WIN_RECYCLE].title       = Tr("Корзина", "Recycle Bin");
     g_Windows[WIN_DONATE].title        = Tr("Копейка joive - Поддержка автора", "Support joive - Author Donation");
+
+    InitCmdHistory();
 }
 
 void InitWindows() {
@@ -595,15 +598,16 @@ struct BenchmarkState {
     std::atomic<float> progress{0.0f};
     bool has_results{false};
     clustershift::core::BenchmarkMetrics metrics{};
-    std::string status_label = "Готов к запуску";
+    int status_code = 0; // 0=ready, 1=running, 2=done, 3=error
+    int error_code = 0;
 };
 BenchmarkState g_Bench;
 
 void StartBenchmarkRun() {
     if (g_Bench.is_running) return;
     g_Bench.is_running = true;
+    g_Bench.status_code = 1;
     g_Bench.progress = 0.05f;
-    g_Bench.status_label = "Выполняется тестирование ввода-вывода (IOCP)...";
     PlayXPSound(L"Windows Navigation Start.wav");
 
     std::thread([&]() {
@@ -612,10 +616,11 @@ void StartBenchmarkRun() {
         if (res) {
             g_Bench.metrics = res.value();
             g_Bench.has_results = true;
-            g_Bench.status_label = "Тест успешно завершен!";
+            g_Bench.status_code = 2;
             PlayXPSound(L"Windows XP Notify.wav");
         } else {
-            g_Bench.status_label = "Ошибка теста (Код: " + std::to_string(res.error()) + ")";
+            g_Bench.status_code = 3;
+            g_Bench.error_code = res.error();
         }
         g_Bench.progress = 1.0f;
         g_Bench.is_running = false;
@@ -690,19 +695,23 @@ void UpdateDefragSimulation() {
 
 // --- Real CMD Processor State ---
 struct CmdState {
-    std::vector<std::string> history = {
-        "Microsoft Windows XP [Версия 5.1.2600]",
-        "(C) Корпорация Майкрософт, 1985-2001.",
-        "",
-        "ClusterShift Core Engine [v0.6.0] initialized.",
-        "MFT parser stream: DirectIO ready.",
-        "BypassIO NVMe state: ACTIVE.",
-        "Type 'help' for available commands.",
-        ""
-    };
+    std::vector<std::string> history;
     char input_buf[256] = "";
 };
 CmdState g_Cmd;
+
+void InitCmdHistory() {
+    if (!g_Cmd.history.empty() && g_Cmd.history.size() > 8) return;
+    g_Cmd.history.clear();
+    g_Cmd.history.push_back(Tr("Microsoft Windows XP [Версия 5.1.2600]", "Microsoft Windows XP [Version 5.1.2600]"));
+    g_Cmd.history.push_back(Tr("(C) Корпорация Майкрософт, 1985-2001.", "(C) Copyright 1985-2001 Microsoft Corp."));
+    g_Cmd.history.push_back("");
+    g_Cmd.history.push_back("ClusterShift Core Engine [v0.6.0] initialized.");
+    g_Cmd.history.push_back(Tr("Поток парсера MFT: DirectIO готов.", "MFT parser stream: DirectIO ready."));
+    g_Cmd.history.push_back(Tr("Статус BypassIO NVMe: АКТИВЕН.", "BypassIO NVMe state: ACTIVE."));
+    g_Cmd.history.push_back(Tr("Введите 'help' для списка доступных команд.", "Type 'help' for available commands."));
+    g_Cmd.history.push_back("");
+}
 
 void ExecuteCmd(const std::string& cmdLine) {
     g_Cmd.history.push_back("C:\\ClusterShift> " + cmdLine);
@@ -710,14 +719,14 @@ void ExecuteCmd(const std::string& cmdLine) {
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
     if (lower == "help") {
-        g_Cmd.history.push_back("Доступные команды ClusterShift [v0.6.0]:");
-        g_Cmd.history.push_back("  status    - вывод аппаратной телеметрии накопителя и MFT");
-        g_Cmd.history.push_back("  bench     - IOCP benchmark скорости чтения/записи");
-        g_Cmd.history.push_back("  trim      - отправка команды TRIM на контроллер SSD/NVMe");
-        g_Cmd.history.push_back("  clean     - безопасная очистка %TEMP% и корзины");
-        g_Cmd.history.push_back("  defrag    - анализ кластерной карты тома");
-        g_Cmd.history.push_back("  cls       - очистить терминал");
-        g_Cmd.history.push_back("  exit      - закрыть окно командной строки");
+        g_Cmd.history.push_back(Tr("Справка по командам ClusterShift [v0.6.0]:", "ClusterShift commands [v0.6.0]:"));
+        g_Cmd.history.push_back(Tr("  status    - состояние накопителя и анализ MFT", "  status    - drive telemetry and MFT analysis"));
+        g_Cmd.history.push_back(Tr("  bench     - IOCP бенчмарк чтения/записи", "  bench     - IOCP read/write benchmark"));
+        g_Cmd.history.push_back(Tr("  trim      - отправка команды TRIM на накопитель SSD/NVMe", "  trim      - issue TRIM command to SSD/NVMe"));
+        g_Cmd.history.push_back(Tr("  clean     - безопасная очистка %TEMP% и корзины", "  clean     - clean %TEMP% and Recycle Bin"));
+        g_Cmd.history.push_back(Tr("  defrag    - карта распределения кластеров", "  defrag    - show cluster allocation map"));
+        g_Cmd.history.push_back(Tr("  cls       - очистить экран", "  cls       - clear screen"));
+        g_Cmd.history.push_back(Tr("  exit      - закрыть командную строку", "  exit      - close command prompt"));
     } else if (lower == "status") {
         RefreshVolumeTelemetry();
         char buf[256];
@@ -733,44 +742,44 @@ void ExecuteCmd(const std::string& cmdLine) {
             g_Cmd.history.push_back("[+] NVMe Sensor Temperature: " + std::to_string(g_VolState.temperature_c) + " deg C");
         }
     } else if (lower == "bench") {
-        g_Cmd.history.push_back("[*] Запуск multi-threaded IOCP Benchmark (128 MB)...");
+        g_Cmd.history.push_back(Tr("[*] Запуск многопоточного IOCP бенчмарка (128 MB)...", "[*] Starting multi-threaded IOCP Benchmark (128 MB)..."));
         auto res = clustershift::core::DiskBenchmark::run_benchmark(L'C', 128ULL * 1024 * 1024, true, 4);
         if (res) {
             char buf[256];
-            snprintf(buf, sizeof(buf), "[+] Последовательное чтение:  %.1f MB/s", res->seq_read_mbps);
+            snprintf(buf, sizeof(buf), "[+] Sequential Read:  %.1f MB/s", res->seq_read_mbps);
             g_Cmd.history.push_back(buf);
-            snprintf(buf, sizeof(buf), "[+] Последовательная запись: %.1f MB/s", res->seq_write_mbps);
+            snprintf(buf, sizeof(buf), "[+] Sequential Write: %.1f MB/s", res->seq_write_mbps);
             g_Cmd.history.push_back(buf);
-            snprintf(buf, sizeof(buf), "[+] Случайный доступ 4K QD32: %.0f IOPS", res->rnd_4k_read_iops);
+            snprintf(buf, sizeof(buf), "[+] Random 4K QD32:   %.0f IOPS", res->rnd_4k_read_iops);
             g_Cmd.history.push_back(buf);
-            snprintf(buf, sizeof(buf), "[+] Задержка (Latency Q1T1):   %.1f us", res->rnd_4k_q1t1_avg_lat_us);
+            snprintf(buf, sizeof(buf), "[+] Latency (Q1T1):   %.1f us", res->rnd_4k_q1t1_avg_lat_us);
             g_Cmd.history.push_back(buf);
         } else {
-            g_Cmd.history.push_back("[-] Ошибка теста (Код: " + std::to_string(res.error()) + ")");
+            g_Cmd.history.push_back("[-] Benchmark failed (Error: " + std::to_string(res.error()) + ")");
         }
     } else if (lower == "trim") {
-        g_Cmd.history.push_back("[*] Отправка IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES (Trim)...");
+        g_Cmd.history.push_back("[*] IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES (Trim)...");
         auto vol = clustershift::core::VolumeManager::open_volume(L'C', true);
         if (vol) {
             auto res = clustershift::core::TrimEngine::trim_volume(vol->get());
             if (res && res->success) {
-                g_Cmd.history.push_back("[+] TRIM успешно выполнен. Нераспределенные блоки SSD возвращены.");
+                g_Cmd.history.push_back(Tr("[+] TRIM успешно отправлен на SSD.", "[+] TRIM issued successfully to SSD."));
             } else {
-                g_Cmd.history.push_back("[-] Ошибка TRIM (Код: " + std::to_string(GetLastError()) + "). Требуются права Администратора.");
+                g_Cmd.history.push_back(Tr("[-] Ошибка отправки TRIM.", "[-] Failed to issue TRIM."));
             }
         } else {
-            g_Cmd.history.push_back("[-] Не удалось открыть том с правами записи для TRIM.");
+            g_Cmd.history.push_back(Tr("[-] Не удалось открыть том с правами записи для TRIM.", "[-] Could not open volume with write access for TRIM."));
         }
     } else if (lower == "clean") {
-        g_Cmd.history.push_back("[*] Очистка временных файлов и корзины...");
+        g_Cmd.history.push_back(Tr("[*] Очистка корзины и временных файлов...", "[*] Cleaning Recycle Bin & temporary files..."));
         SHEmptyRecycleBinW(nullptr, nullptr, SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND);
         RefreshCleanupScan();
-        g_Cmd.history.push_back("[+] Очистка завершена.");
+        g_Cmd.history.push_back(Tr("[+] Очистка выполнена.", "[+] Cleanup complete."));
     } else if (lower == "defrag") {
         InitDefragGrid();
-        g_Cmd.history.push_back("[+] Анализ кластеров C: выполнен.");
+        g_Cmd.history.push_back(Tr("[+] Карта кластеров тома C: обновлена.", "[+] Cluster map for volume C: updated."));
         char buf[256];
-        snprintf(buf, sizeof(buf), "[+] Непрерывных: %llu кластеров, Фрагментированных: %llu кластеров",
+        snprintf(buf, sizeof(buf), "[+] Contiguous: %llu clusters, Fragmented: %llu clusters",
             (unsigned long long)g_Defrag.contiguous_clusters, (unsigned long long)g_Defrag.fragmented_clusters);
         g_Cmd.history.push_back(buf);
     } else if (lower == "cls") {
@@ -778,10 +787,9 @@ void ExecuteCmd(const std::string& cmdLine) {
     } else if (lower == "exit") {
         g_Windows[WIN_CMD].is_open = false;
     } else if (!lower.empty()) {
-        g_Cmd.history.push_back("'" + cmdLine + "' не является внутренней или внешней командой.");
+        g_Cmd.history.push_back("'" + cmdLine + "' " + Tr("не является внутренней или внешней командой.", "is not recognized as an internal or external command."));
     }
 }
-
 } // namespace
 
 // Forward Declarations
@@ -1224,7 +1232,15 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
                 }
             }
             ImGui::Spacing();
-            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "%s", g_Bench.status_label.c_str());
+            const char* benchStatus = Tr("Готов к запуску", "Ready to start");
+            if (g_Bench.is_running) {
+                benchStatus = Tr("Выполняется стресс-тест (IOCP)...", "Running IOCP stress-test (128 MB)...");
+            } else if (g_Bench.has_results) {
+                benchStatus = Tr("Тестирование завершено успешно!", "Benchmark completed successfully!");
+            } else if (g_Bench.status_code == 3) {
+                benchStatus = Tr("Ошибка тестирования", "Benchmark test error");
+            }
+            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "%s", benchStatus);
 
             ImGui::NextColumn();
             ImGui::Text("%s", Tr("Результаты тестов (МБ/с, IOPS, задержка):", "Benchmark Results (MB/s, IOPS, Latency):"));
