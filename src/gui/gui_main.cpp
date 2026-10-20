@@ -97,6 +97,20 @@ ImFont* g_FontBold = nullptr;
 ImFont* g_FontLarge = nullptr;
 ImFont* g_FontStartHeader = nullptr;
 
+// --- Internationalization (i18n) Engine ---
+bool g_IsRussian = false;
+
+void DetectLanguage() {
+    LANGID userUi = PRIMARYLANGID(GetUserDefaultUILanguage());
+    LANGID sysUi = PRIMARYLANGID(GetSystemDefaultUILanguage());
+    LANGID userLcid = PRIMARYLANGID(GetUserDefaultLCID());
+    g_IsRussian = (userUi == LANG_RUSSIAN || sysUi == LANG_RUSSIAN || userLcid == LANG_RUSSIAN);
+}
+
+inline const char* Tr(const char* ru, const char* en) {
+    return g_IsRussian ? ru : en;
+}
+
 // Boot State
 enum AppState {
     STATE_BOOT = 0,
@@ -272,7 +286,7 @@ void InitWindows() {
     // 1. My Computer
     g_Windows[WIN_MY_COMPUTER] = {
         WIN_MY_COMPUTER,
-        "Мой компьютер",
+        Tr("Мой компьютер", "My Computer"),
         nullptr,
         ImVec2(120, 80), ImVec2(640, 480), ImVec2(400, 300),
         false, false, false, // ALL START CLOSED
@@ -283,7 +297,7 @@ void InitWindows() {
     // 2. Disk Defragmenter
     g_Windows[WIN_DEFRAG] = {
         WIN_DEFRAG,
-        "Дефрагментатор диска — ClusterShift",
+        Tr("Дефрагментатор диска — ClusterShift", "Disk Defragmenter — ClusterShift"),
         nullptr,
         ImVec2(140, 90), ImVec2(780, 530), ImVec2(500, 350),
         false, false, false, // ALL START CLOSED
@@ -294,7 +308,7 @@ void InitWindows() {
     // 3. Disk Cleanup (cleanmgr)
     g_Windows[WIN_CLEANUP] = {
         WIN_CLEANUP,
-        "Очистка диска (C:)",
+        Tr("Очистка диска (C:)", "Disk Cleanup (C:)"),
         nullptr,
         ImVec2(220, 120), ImVec2(490, 440), ImVec2(380, 350),
         false, false, false,
@@ -305,7 +319,7 @@ void InitWindows() {
     // 4. Benchmark
     g_Windows[WIN_BENCHMARK] = {
         WIN_BENCHMARK,
-        "Тест скорости накопителя (NVMe/SSD Benchmark)",
+        Tr("Тест скорости накопителя (NVMe/SSD Benchmark)", "Storage Speed Test (NVMe/SSD Benchmark)"),
         nullptr,
         ImVec2(180, 90), ImVec2(680, 460), ImVec2(450, 300),
         false, false, false,
@@ -316,7 +330,7 @@ void InitWindows() {
     // 5. Command Prompt (cmd.exe)
     g_Windows[WIN_CMD] = {
         WIN_CMD,
-        "Командная строка — clustershift.exe",
+        Tr("Командная строка — clustershift.exe", "Command Prompt — clustershift.exe"),
         nullptr,
         ImVec2(100, 140), ImVec2(660, 420), ImVec2(400, 250),
         false, false, false,
@@ -327,7 +341,7 @@ void InitWindows() {
     // 6. Control Panel
     g_Windows[WIN_CONTROL_PANEL] = {
         WIN_CONTROL_PANEL,
-        "Панель управления ClusterShift",
+        Tr("Панель управления ClusterShift", "ClusterShift Control Panel"),
         nullptr,
         ImVec2(160, 110), ImVec2(600, 440), ImVec2(420, 300),
         false, false, false,
@@ -338,7 +352,7 @@ void InitWindows() {
     // 7. Recycle Bin
     g_Windows[WIN_RECYCLE] = {
         WIN_RECYCLE,
-        "Корзина",
+        Tr("Корзина", "Recycle Bin"),
         nullptr,
         ImVec2(200, 140), ImVec2(520, 380), ImVec2(360, 260),
         false, false, false,
@@ -349,7 +363,7 @@ void InitWindows() {
     // 8. Donate joive
     g_Windows[WIN_DONATE] = {
         WIN_DONATE,
-        "Копейка joive — Поддержка автора",
+        Tr("Копейка joive — Поддержка автора", "Support joive — Author Donation"),
         nullptr,
         ImVec2(280, 160), ImVec2(460, 320), ImVec2(360, 240),
         false, false, false,
@@ -957,23 +971,23 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImVec2 legPos = ImGui::GetCursorScreenPos();
             drawList->AddRectFilled(ImVec2(legPos.x, legPos.y + 2), ImVec2(legPos.x + 12 * scale, legPos.y + (2 + 12 * scale)), IM_COL32(235, 40, 30, 255), 1.0f);
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f * scale);
-            ImGui::Text("Фрагментировано: %llu кластеров", (unsigned long long)g_Defrag.fragmented_clusters);
+            ImGui::Text(Tr("Фрагментировано: %llu кластеров", "Fragmented: %llu clusters"), (unsigned long long)g_Defrag.fragmented_clusters);
 
             ImGui::SameLine(250 * scale);
             ImVec2 legPos2 = ImGui::GetCursorScreenPos();
             drawList->AddRectFilled(ImVec2(legPos2.x, legPos2.y + 2), ImVec2(legPos2.x + 12 * scale, legPos2.y + (2 + 12 * scale)), IM_COL32(0, 85, 230, 255), 1.0f);
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f * scale);
-            ImGui::Text("Непрерывно: %llu кластеров", (unsigned long long)g_Defrag.contiguous_clusters);
+            ImGui::Text(Tr("Непрерывно: %llu кластеров", "Contiguous: %llu clusters"), (unsigned long long)g_Defrag.contiguous_clusters);
 
             ImGui::SameLine(500 * scale);
             ImVec2 legPos3 = ImGui::GetCursorScreenPos();
             drawList->AddRectFilled(ImVec2(legPos3.x, legPos3.y + 2), ImVec2(legPos3.x + 12 * scale, legPos3.y + (2 + 12 * scale)), IM_COL32(35, 175, 45, 255), 1.0f);
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f * scale);
-            ImGui::Text("Системные: MFT Zone");
+            ImGui::Text("%s", Tr("Системные: MFT Zone", "System: MFT Zone"));
 
             ImGui::Spacing();
             float btnH = 28.0f * scale;
-            if (ImGui::Button(g_Defrag.is_running ? "Приостановить" : "Дефрагментация / TRIM", ImVec2(190 * scale, btnH))) {
+            if (ImGui::Button(g_Defrag.is_running ? Tr("Приостановить", "Pause") : Tr("Дефрагментация / TRIM", "Defragment / TRIM"), ImVec2(190 * scale, btnH))) {
                 g_Defrag.is_running = !g_Defrag.is_running;
                 if (g_Defrag.is_running) {
                     PlayXPSound(L"Windows Navigation Start.wav");
@@ -984,19 +998,19 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
                 }
             }
             ImGui::SameLine();
-            if (ImGui::Button("Анализ тома", ImVec2(120 * scale, btnH))) {
+            if (ImGui::Button(Tr("Анализ тома", "Analyze Volume"), ImVec2(120 * scale, btnH))) {
                 PlayXPSound(L"Windows XP Start.wav");
                 g_Defrag.progress = 0.0f;
                 InitDefragGrid();
             }
             ImGui::SameLine();
-            if (ImGui::Button("Отчет ClusterShift", ImVec2(150 * scale, btnH))) {
+            if (ImGui::Button(Tr("Отчет ClusterShift", "ClusterShift Report"), ImVec2(150 * scale, btnH))) {
                 ToggleWindow(WIN_CMD);
             }
 
         } else if (win.id == WIN_MY_COMPUTER) {
             // === 2. My Computer Window ===
-            ImGui::Text("Файлы, хранящиеся на этом компьютере:");
+            ImGui::Text("%s", Tr("Файлы, хранящиеся на этом компьютере:", "Files stored on this computer:"));
             ImGui::Separator();
 
             ImGui::BeginChild("DrivesChild", ImVec2(-1, -1), true);
@@ -1006,12 +1020,12 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
                 ImGui::SameLine(0.0f, 12.0f * scale);
             }
             ImGui::BeginGroup();
-            ImGui::Text("Локальный диск (C:)  [%s]", g_VolState.product_name.c_str());
+            ImGui::Text("%s (C:)  [%s]", Tr("Локальный диск", "Local Disk"), g_VolState.product_name.c_str());
             double total_gb = (double)g_VolState.total_bytes / (1024.0 * 1024.0 * 1024.0);
             double free_gb  = (double)g_VolState.free_bytes / (1024.0 * 1024.0 * 1024.0);
             double used_gb  = (double)g_VolState.used_bytes / (1024.0 * 1024.0 * 1024.0);
             char driveInfoBuf[128];
-            snprintf(driveInfoBuf, sizeof(driveInfoBuf), "Емкость: %.1f ГБ | Свободно: %.1f ГБ", total_gb, free_gb);
+            snprintf(driveInfoBuf, sizeof(driveInfoBuf), Tr("Емкость: %.1f ГБ | Свободно: %.1f ГБ", "Capacity: %.1f GB | Free: %.1f GB"), total_gb, free_gb);
             ImGui::TextColored(ImVec4(0.35f, 0.35f, 0.35f, 1.0f), "%s", driveInfoBuf);
             ImGui::ProgressBar(g_VolState.usage_ratio, ImVec2(-1, 16.0f * scale));
             ImGui::EndGroup();
@@ -1022,7 +1036,13 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
             // Properties Pie Chart Section
             std::string fsStr(g_VolState.file_system.begin(), g_VolState.file_system.end());
-            ImGui::Text("Свойства диска C: [%s, Кластер %u байт, %s]", fsStr.c_str(), g_VolState.cluster_size, g_VolState.drive_kind_str.c_str());
+            ImGui::Text("%s: [%s, %s %u %s, %s]",
+                Tr("Свойства диска C", "Properties: Local Disk (C)"),
+                fsStr.c_str(),
+                Tr("Кластер", "Cluster"),
+                g_VolState.cluster_size,
+                Tr("байт", "bytes"),
+                g_VolState.drive_kind_str.c_str());
             
             float availW = ImGui::GetContentRegionAvail().x;
             float availH = ImGui::GetContentRegionAvail().y;
@@ -1052,8 +1072,8 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
             ImGui::BeginGroup();
             char usedLabel[64], freeLabel[64];
-            snprintf(usedLabel, sizeof(usedLabel), "Занято:   %.1f ГБ (%.1f%%)", used_gb, g_VolState.usage_ratio * 100.0f);
-            snprintf(freeLabel, sizeof(freeLabel), "Свободно: %.1f ГБ (%.1f%%)", free_gb, (1.0f - g_VolState.usage_ratio) * 100.0f);
+            snprintf(usedLabel, sizeof(usedLabel), Tr("Занято:   %.1f ГБ (%.1f%%)", "Used:     %.1f GB (%.1f%%)"), used_gb, g_VolState.usage_ratio * 100.0f);
+            snprintf(freeLabel, sizeof(freeLabel), Tr("Свободно: %.1f ГБ (%.1f%%)", "Free:     %.1f GB (%.1f%%)"), free_gb, (1.0f - g_VolState.usage_ratio) * 100.0f);
 
             ImVec2 leg1 = ImGui::GetCursorScreenPos();
             pDraw->AddRectFilled(ImVec2(leg1.x, leg1.y + 2), ImVec2(leg1.x + 14 * scale, leg1.y + (2 + 12 * scale)), IM_COL32(0, 85, 230, 255), 2.0f);
@@ -1070,15 +1090,15 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImGui::Spacing();
             float btnW = 140.0f * scale;
             float btnH = 28.0f * scale;
-            if (ImGui::Button("Очистка диска...", ImVec2(btnW, btnH))) {
+            if (ImGui::Button(Tr("Очистка диска...", "Disk Cleanup..."), ImVec2(btnW, btnH))) {
                 ToggleWindow(WIN_CLEANUP);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Дефрагментация...", ImVec2(btnW, btnH))) {
+            if (ImGui::Button(Tr("Дефрагментация...", "Defragmentation..."), ImVec2(btnW, btnH))) {
                 ToggleWindow(WIN_DEFRAG);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Обновить", ImVec2(90.0f * scale, btnH))) {
+            if (ImGui::Button(Tr("Обновить", "Refresh"), ImVec2(90.0f * scale, btnH))) {
                 RefreshVolumeTelemetry();
                 PlayXPSound(L"Windows XP Start.wav");
             }
@@ -1088,10 +1108,10 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
         } else if (win.id == WIN_CLEANUP) {
             // === 3. Disk Cleanup (cleanmgr) ===
-            ImGui::Text("Очистка диска для (C:)");
+            ImGui::Text("%s", Tr("Очистка диска для (C:)", "Disk Cleanup for (C:)"));
             double total_clean_mb = (double)(g_Clean.temp_bytes + g_Clean.recycle_bytes + g_Clean.logs_bytes) / (1024.0 * 1024.0);
             char cleanSummary[128];
-            snprintf(cleanSummary, sizeof(cleanSummary), "Вы можете использовать средство очистки диска для освобождения до %.1f МБ на диске (C:).", total_clean_mb);
+            snprintf(cleanSummary, sizeof(cleanSummary), Tr("Вы можете использовать средство очистки диска для освобождения до %.1f МБ на диске (C:).", "You can use Disk Cleanup to free up to %.1f MB on disk (C:)."), total_clean_mb);
             ImGui::TextWrapped("%s", cleanSummary);
             ImGui::Separator();
 
@@ -1101,9 +1121,9 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             double log_mb  = (double)g_Clean.logs_bytes / (1024.0 * 1024.0);
 
             char tempLabel[128], recLabel[128], logLabel[128];
-            snprintf(tempLabel, sizeof(tempLabel), "Временные файлы (%%TEMP%%) — %.1f МБ", temp_mb);
-            snprintf(recLabel,  sizeof(recLabel),  "Корзина Windows (%lld файлов) — %.1f МБ", (long long)g_Recycle.num_items, rec_mb);
-            snprintf(logLabel,  sizeof(logLabel),  "Кэш системных логов и дампов — %.1f МБ", log_mb);
+            snprintf(tempLabel, sizeof(tempLabel), Tr("Временные файлы (%%TEMP%%) — %.1f МБ", "Temporary files (%%TEMP%%) — %.1f MB"), temp_mb);
+            snprintf(recLabel,  sizeof(recLabel),  Tr("Корзина Windows (%lld файлов) — %.1f МБ", "Windows Recycle Bin (%lld files) — %.1f MB"), (long long)g_Recycle.num_items, rec_mb);
+            snprintf(logLabel,  sizeof(logLabel),  Tr("Кэш системных логов и дампов — %.1f МБ", "System logs and crash dumps — %.1f MB"), log_mb);
 
             ImGui::Spacing();
             ImGui::Checkbox(tempLabel, &g_Clean.clean_temp);
@@ -1122,45 +1142,45 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
                     ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.1f, 1.0f), "%s", g_Clean.clean_status.c_str());
                 }
                 float btnH = 30.0f * scale;
-                if (ImGui::Button("Очистить диск", ImVec2(130.0f * scale, btnH))) {
+                if (ImGui::Button(Tr("Очистить диск", "Clean Disk Now"), ImVec2(130.0f * scale, btnH))) {
                     StartDiskCleanup();
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Обновить анализ", ImVec2(140.0f * scale, btnH))) {
+                if (ImGui::Button(Tr("Обновить анализ", "Refresh Scan"), ImVec2(140.0f * scale, btnH))) {
                     RefreshCleanupScan();
                     PlayXPSound(L"Windows Navigation Start.wav");
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Отмена", ImVec2(90.0f * scale, btnH))) {
+                if (ImGui::Button(Tr("Отмена", "Cancel"), ImVec2(90.0f * scale, btnH))) {
                     win.is_open = false;
                 }
             }
 
         } else if (win.id == WIN_BENCHMARK) {
             // === 4. Benchmark Window ===
-            ImGui::Text("Тест производительности накопителя — NVMe / DirectStorage");
+            ImGui::Text("%s", Tr("Тест производительности накопителя — NVMe / DirectStorage", "Storage Performance Benchmark — NVMe / DirectStorage"));
             ImGui::Separator();
 
             float availW = ImGui::GetContentRegionAvail().x;
             ImGui::Columns(2, "BenchCols", false);
             ImGui::SetColumnWidth(0, std::max(280.0f * scale, availW * 0.42f));
 
-            ImGui::Text("Тестовый накопитель:");
+            ImGui::Text("%s", Tr("Тестовый накопитель:", "Test Target:"));
             ImGui::TextColored(ImVec4(0.0f, 0.4f, 0.9f, 1.0f), "C: [%s]", g_VolState.product_name.c_str());
             ImGui::Spacing();
-            ImGui::Text("Интерфейс: %s", g_VolState.bus_type_str.c_str());
-            ImGui::Text("BypassIO DirectStorage: %s", g_VolState.bypass_io_supported ? "Активен" : "Не поддерживается");
-            ImGui::Text("Размер теста: 128 МБ (Quick IOCP)");
+            ImGui::Text("%s %s", Tr("Интерфейс:", "Interface:"), g_VolState.bus_type_str.c_str());
+            ImGui::Text("%s %s", Tr("BypassIO DirectStorage:", "BypassIO DirectStorage:"), g_VolState.bypass_io_supported ? Tr("Активен", "Active") : Tr("Не поддерживается", "Unsupported"));
+            ImGui::Text("%s", Tr("Размер теста: 128 МБ (Quick IOCP)", "Sample Size: 128 MB (Quick IOCP)"));
             ImGui::Spacing();
 
             float benchBtnW = 220.0f * scale;
             float benchBtnH = 36.0f * scale;
             if (g_Bench.is_running) {
-                ImGui::Button("Идет тест...", ImVec2(benchBtnW, benchBtnH));
+                ImGui::Button(Tr("Идет тест...", "Running Benchmark..."), ImVec2(benchBtnW, benchBtnH));
                 float p = sinf((float)ImGui::GetTime() * 4.0f) * 0.5f + 0.5f;
                 ImGui::ProgressBar(p, ImVec2(benchBtnW, 14.0f * scale));
             } else {
-                if (ImGui::Button("Запустить Benchmark", ImVec2(benchBtnW, benchBtnH))) {
+                if (ImGui::Button(Tr("Запустить Benchmark", "Run Benchmark"), ImVec2(benchBtnW, benchBtnH))) {
                     StartBenchmarkRun();
                 }
             }
@@ -1168,20 +1188,20 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "%s", g_Bench.status_label.c_str());
 
             ImGui::NextColumn();
-            ImGui::Text("Результаты тестов (МБ/с, IOPS, задержка):");
+            ImGui::Text("%s", Tr("Результаты тестов (МБ/с, IOPS, задержка):", "Benchmark Results (MB/s, IOPS, Latency):"));
             ImGui::Spacing();
             
             char seqR[128], seqW[128], rndI[128], latL[128];
             if (g_Bench.has_results) {
-                snprintf(seqR, sizeof(seqR), "Последовательное чтение: %.1f МБ/с", g_Bench.metrics.seq_read_mbps);
-                snprintf(seqW, sizeof(seqW), "Последовательная запись: %.1f МБ/с", g_Bench.metrics.seq_write_mbps);
-                snprintf(rndI, sizeof(rndI), "Случайный доступ 4K QD32: %.0f IOPS", g_Bench.metrics.rnd_4k_read_iops);
-                snprintf(latL, sizeof(latL), "Задержка обращения (Latency): %.1f мкс", g_Bench.metrics.rnd_4k_q1t1_avg_lat_us);
+                snprintf(seqR, sizeof(seqR), Tr("Последовательное чтение: %.1f МБ/с", "Sequential Read:  %.1f MB/s"), g_Bench.metrics.seq_read_mbps);
+                snprintf(seqW, sizeof(seqW), Tr("Последовательная запись: %.1f МБ/с", "Sequential Write: %.1f MB/s"), g_Bench.metrics.seq_write_mbps);
+                snprintf(rndI, sizeof(rndI), Tr("Случайный доступ 4K QD32: %.0f IOPS", "Random Read 4KB QD32: %.0f IOPS"), g_Bench.metrics.rnd_4k_read_iops);
+                snprintf(latL, sizeof(latL), Tr("Задержка обращения (Latency): %.1f мкс", "Read Latency (Q1T1 4KB): %.1f us"), g_Bench.metrics.rnd_4k_q1t1_avg_lat_us);
             } else {
-                snprintf(seqR, sizeof(seqR), "Последовательное чтение: — (нажмите Запустить)");
-                snprintf(seqW, sizeof(seqW), "Последовательная запись: —");
-                snprintf(rndI, sizeof(rndI), "Случайный доступ 4K QD32: —");
-                snprintf(latL, sizeof(latL), "Задержка обращения (Latency): —");
+                snprintf(seqR, sizeof(seqR), Tr("Последовательное чтение: — (нажмите Запустить)", "Sequential Read:  — (click Run Benchmark)"));
+                snprintf(seqW, sizeof(seqW), Tr("Последовательная запись: —", "Sequential Write: —"));
+                snprintf(rndI, sizeof(rndI), Tr("Случайный доступ 4K QD32: —", "Random Read 4KB QD32: —"));
+                snprintf(latL, sizeof(latL), Tr("Задержка обращения (Latency): —", "Read Latency (Q1T1 4KB): —"));
             }
 
             float barH = 16.0f * scale;
@@ -1237,7 +1257,7 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
         } else if (win.id == WIN_CONTROL_PANEL) {
             // === 6. Control Panel ===
-            ImGui::Text("Панель управления ClusterShift — Конфигурация системы:");
+            ImGui::Text("%s", Tr("Панель управления ClusterShift — Конфигурация системы:", "ClusterShift Control Panel — System Configuration:"));
             ImGui::Separator();
 
             float availW = ImGui::GetContentRegionAvail().x;
@@ -1247,43 +1267,43 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
             // Card 1: Hardware Telemetry
             ImGui::BeginChild("CP_Card1", ImVec2(availW, cardH), true);
-            ImGui::TextColored(ImVec4(0.0f, 0.33f, 0.9f, 1.0f), "Аппаратная конфигурация накопителя:");
+            ImGui::TextColored(ImVec4(0.0f, 0.33f, 0.9f, 1.0f), "%s", Tr("Аппаратная конфигурация накопителя:", "Hardware Storage Configuration:"));
             ImGui::Separator();
-            ImGui::BulletText("Модель устройства: %s", g_VolState.product_name.c_str());
-            ImGui::BulletText("Интерфейс контроллера: %s", g_VolState.bus_type_str.c_str());
+            ImGui::BulletText("%s %s", Tr("Модель устройства:", "Device Model:"), g_VolState.product_name.c_str());
+            ImGui::BulletText("%s %s", Tr("Интерфейс контроллера:", "Controller Bus:"), g_VolState.bus_type_str.c_str());
             if (g_VolState.temperature_c > 0) {
-                ImGui::BulletText("Температура датчика: %d °C  [Норма]", g_VolState.temperature_c);
+                ImGui::BulletText("%s %d °C  [%s]", Tr("Температура датчика:", "Thermal Sensor:"), g_VolState.temperature_c, Tr("Норма", "Normal"));
             } else {
-                ImGui::BulletText("Температура датчика: Не поддерживается контроллером");
+                ImGui::BulletText("%s %s", Tr("Температура датчика:", "Thermal Sensor:"), Tr("Не поддерживается контроллером", "Unsupported by controller"));
             }
-            ImGui::BulletText("Размер сектора / кластера: %u байт", g_VolState.cluster_size);
+            ImGui::BulletText("%s %u %s", Tr("Размер сектора / кластера:", "Sector / Cluster size:"), g_VolState.cluster_size, Tr("байт", "bytes"));
             ImGui::EndChild();
 
             ImGui::Spacing();
 
             // Card 2: Advanced Storage Features (BypassIO, TRIM, VSS)
             ImGui::BeginChild("CP_Card2", ImVec2(availW, -1), true);
-            ImGui::TextColored(ImVec4(0.0f, 0.33f, 0.9f, 1.0f), "Стек прямого доступа и оптимизация flash-памяти:");
+            ImGui::TextColored(ImVec4(0.0f, 0.33f, 0.9f, 1.0f), "%s", Tr("Стек прямого доступа и оптимизация flash-памяти:", "Direct Access Stack & Flash Optimization:"));
             ImGui::Separator();
 
             ImGui::Columns(2, "CPCols", false);
             ImGui::SetColumnWidth(0, availW * 0.55f);
 
-            ImGui::BulletText("Управление BypassIO DirectStorage:");
-            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "Статус стека: %s", g_VolState.bypass_io_status.c_str());
-            ImGui::TextWrapped("Обеспечивает прямой обмен данными между NVMe и видеопамятью GPU минуя стек файлового фильтра.");
+            ImGui::BulletText("%s", Tr("Управление BypassIO DirectStorage:", "DirectStorage BypassIO Status:"));
+            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "%s %s", Tr("Статус стека:", "Stack Status:"), g_VolState.bypass_io_status.c_str());
+            ImGui::TextWrapped("%s", Tr("Обеспечивает прямой обмен данными между NVMe и видеопамятью GPU минуя стек файлового фильтра.", "Enables direct high-throughput streaming from NVMe to GPU VRAM bypassing filter drivers."));
 
             ImGui::Spacing();
-            ImGui::BulletText("Защита VSS (Теневые копии тома):");
-            ImGui::TextColored(ImVec4(0.1f, 0.55f, 0.1f, 1.0f), "АКТИВНА — снимки NTFS защищены от деградации.");
+            ImGui::BulletText("%s", Tr("Защита VSS (Теневые копии тома):", "VSS Shadow Copy Protection:"));
+            ImGui::TextColored(ImVec4(0.1f, 0.55f, 0.1f, 1.0f), "%s", Tr("АКТИВНА — снимки NTFS защищены от деградации.", "ACTIVE — NTFS snapshots are protected from degradation."));
 
             ImGui::NextColumn();
-            ImGui::BulletText("TRIM Engine & Сборка мусора SSD:");
-            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "Освобождение неиспользуемых блоков NAND.");
+            ImGui::BulletText("%s", Tr("TRIM Engine & Сборка мусора SSD:", "TRIM Engine & SSD Garbage Collection:"));
+            ImGui::TextColored(ImVec4(0.3f, 0.3f, 0.3f, 1.0f), "%s", Tr("Освобождение неиспользуемых блоков NAND.", "Reclaims unused flash NAND memory blocks."));
             ImGui::Spacing();
             float trimBtnW = 210.0f * scale;
             float trimBtnH = 32.0f * scale;
-            if (ImGui::Button("Выполнить TRIM тома C:", ImVec2(trimBtnW, trimBtnH))) {
+            if (ImGui::Button(Tr("Выполнить TRIM тома C:", "Execute TRIM for Volume C:"), ImVec2(trimBtnW, trimBtnH))) {
                 auto vol = clustershift::core::VolumeManager::open_volume(L'C', true);
                 if (vol) {
                     (void)clustershift::core::TrimEngine::trim_volume(vol->get());
@@ -1295,7 +1315,7 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
 
         } else if (win.id == WIN_RECYCLE) {
             // === 7. Recycle Bin ===
-            ImGui::Text("Корзина содержит удаленные файлы:");
+            ImGui::Text("%s", Tr("Корзина содержит удаленные файлы:", "Recycle Bin contains deleted files:"));
             ImGui::Separator();
 
             float availW = ImGui::GetContentRegionAvail().x;
@@ -1308,44 +1328,44 @@ void RenderXPWindow(XPWindow& win, int winIndex, float screenW, float screenH) {
             ImGui::BeginGroup();
             double recMb = (double)g_Recycle.total_bytes / (1024.0 * 1024.0);
             char recItemsBuf[128];
-            snprintf(recItemsBuf, sizeof(recItemsBuf), "Объектов в корзине: %lld", (long long)g_Recycle.num_items);
+            snprintf(recItemsBuf, sizeof(recItemsBuf), Tr("Объектов в корзине: %lld", "Items in Recycle Bin: %lld"), (long long)g_Recycle.num_items);
             ImGui::TextColored(ImVec4(0.0f, 0.35f, 0.9f, 1.0f), "%s", recItemsBuf);
             char recSizeBuf[128];
-            snprintf(recSizeBuf, sizeof(recSizeBuf), "Общий объем: %.2f МБ", recMb);
+            snprintf(recSizeBuf, sizeof(recSizeBuf), Tr("Общий объем: %.2f МБ", "Total Size: %.2f MB"), recMb);
             ImGui::TextColored(ImVec4(0.35f, 0.35f, 0.35f, 1.0f), "%s", recSizeBuf);
             ImGui::EndGroup();
             ImGui::EndChild();
 
             ImGui::Spacing();
             float rBtnH = 30.0f * scale;
-            if (ImGui::Button("Очистить корзину", ImVec2(160 * scale, rBtnH))) {
+            if (ImGui::Button(Tr("Очистить корзину", "Empty Recycle Bin"), ImVec2(160 * scale, rBtnH))) {
                 SHEmptyRecycleBinW(nullptr, nullptr, SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND);
                 RefreshRecycleBin();
                 RefreshVolumeTelemetry();
                 PlayXPSound(L"Windows XP Recycle.wav");
             }
             ImGui::SameLine();
-            if (ImGui::Button("Обновить", ImVec2(100 * scale, rBtnH))) {
+            if (ImGui::Button(Tr("Обновить", "Refresh"), ImVec2(100 * scale, rBtnH))) {
                 RefreshRecycleBin();
                 PlayXPSound(L"Windows Navigation Start.wav");
             }
 
         } else if (win.id == WIN_DONATE) {
             // === 8. Donate joive Window ===
-            ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.1f, 1.0f), "Поддержка разработчика: joive");
+            ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.1f, 1.0f), "%s", Tr("Поддержка разработчика: joive", "Support Developer: joive"));
             ImGui::Separator();
-            ImGui::TextWrapped("ClusterShift v0.6.0 создан joive. Проект оптимизирует файловые системы и кластеры Windows.");
+            ImGui::TextWrapped("%s", Tr("ClusterShift v0.6.0 создан joive. Проект оптимизирует файловые системы и кластеры Windows.", "ClusterShift v0.6.0 was created by joive to optimize Windows file systems and storage clusters."));
             ImGui::Spacing();
             ImGui::Text("GitHub: JoiveSer/ClusterShift");
-            ImGui::Text("Лицензия: MIT");
+            ImGui::Text("%s: MIT", Tr("Лицензия", "License"));
             ImGui::Spacing();
-            ImGui::Text("Страница доната:");
+            ImGui::Text("%s", Tr("Страница доната:", "Donation Page:"));
             float dBtnH = 34.0f * scale;
-            if (ImGui::Button("Поддержать на Ko-fi (https://ko-fi.com/joive)", ImVec2(-1, dBtnH))) {
+            if (ImGui::Button(Tr("Поддержать на Ko-fi (https://ko-fi.com/joive)", "Support on Ko-fi (https://ko-fi.com/joive)"), ImVec2(-1, dBtnH))) {
                 ShellExecuteW(NULL, L"open", L"https://ko-fi.com/joive", NULL, NULL, SW_SHOWNORMAL);
             }
             ImGui::Spacing();
-            if (ImGui::Button("Закрыть", ImVec2(110 * scale, 28 * scale))) {
+            if (ImGui::Button(Tr("Закрыть", "Close"), ImVec2(110 * scale, 28 * scale))) {
                 win.is_open = false;
             }
         }
@@ -1449,6 +1469,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     g_pTexExit         = LoadTextureFromFileWIC(g_pd3dDevice, ResolveAssetPath(L"winxp/WinXp/Icons48/exit.png").c_str(), nullptr, nullptr);
 
     // Initialize Windows Manager (ALL WINDOWS CLOSED BY DEFAULT)
+    DetectLanguage();
     InitWindows();
     g_Windows[WIN_MY_COMPUTER].icon   = g_pTexComputer;
     g_Windows[WIN_DEFRAG].icon        = g_pTexDefrag;
@@ -1597,13 +1618,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         };
 
         std::vector<DesktopIcon> leftApps = {
-            { WIN_MY_COMPUTER,   "Мой компьютер",     g_pTexComputer,     false },
-            { WIN_DEFRAG,        "Дефрагментатор",    g_pTexDefrag,       false },
-            { WIN_CLEANUP,       "Очистка диска",     g_pTexCleanup,      false },
-            { WIN_BENCHMARK,     "Тест скорости",     g_pTexBenchmark,    false },
-            { WIN_CMD,           "Командная строка",  g_pTexCmd,          false },
-            { WIN_CONTROL_PANEL, "Панель управления", g_pTexControlPanel, false },
-            { WIN_RECYCLE,       "Корзина",           g_pTexRecycle,      false }
+            { WIN_MY_COMPUTER,   Tr("Мой компьютер", "My Computer"),     g_pTexComputer,     false },
+            { WIN_DEFRAG,        Tr("Дефрагментатор", "Defragmenter"),    g_pTexDefrag,       false },
+            { WIN_CLEANUP,       Tr("Очистка диска", "Disk Cleanup"),     g_pTexCleanup,      false },
+            { WIN_BENCHMARK,     Tr("Тест скорости", "Speed Test"),     g_pTexBenchmark,    false },
+            { WIN_CMD,           Tr("Командная строка", "Command Prompt"),  g_pTexCmd,          false },
+            { WIN_CONTROL_PANEL, Tr("Панель управления", "Control Panel"), g_pTexControlPanel, false },
+            { WIN_RECYCLE,       Tr("Корзина", "Recycle Bin"),           g_pTexRecycle,      false }
         };
 
         float startX = 24.0f;
@@ -1659,8 +1680,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 
         // 3. Desktop Apps — Bottom-Right Corner: "Копейка joive" and "Выход"
         std::vector<DesktopIcon> rightApps = {
-            { WIN_DONATE, "Копейка joive", g_pTexCoin, false },
-            { -1,         "Выход",         g_pTexExit, true }
+            { WIN_DONATE, Tr("Копейка joive", "Support joive"), g_pTexCoin, false },
+            { -1,         Tr("Выход", "Exit"),         g_pTexExit, true }
         };
 
         float rightColX = displayW - iconW - 24.0f;
@@ -1765,11 +1786,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 
             struct StartItem { std::string title; std::string sub; ID3D11ShaderResourceView* icon; int winId; };
             std::vector<StartItem> leftItems = {
-                { "Дефрагментатор", "Оптимизация диска", g_pTexDefrag, WIN_DEFRAG },
-                { "Очистка диска", "Освободить место", g_pTexCleanup, WIN_CLEANUP },
-                { "Тест скорости", "NVMe Benchmark", g_pTexBenchmark, WIN_BENCHMARK },
-                { "Командная строка", "cmd.exe", g_pTexCmd, WIN_CMD },
-                { "Мой компьютер", "Диски и кластеры", g_pTexComputer, WIN_MY_COMPUTER }
+                { Tr("Дефрагментатор", "Defragmenter"), Tr("Оптимизация диска", "Disk Optimization"), g_pTexDefrag, WIN_DEFRAG },
+                { Tr("Очистка диска", "Disk Cleanup"), Tr("Освободить место", "Free disk space"), g_pTexCleanup, WIN_CLEANUP },
+                { Tr("Тест скорости", "Speed Test"), Tr("NVMe Benchmark", "NVMe Benchmark"), g_pTexBenchmark, WIN_BENCHMARK },
+                { Tr("Командная строка", "Command Prompt"), "cmd.exe", g_pTexCmd, WIN_CMD },
+                { Tr("Мой компьютер", "My Computer"), Tr("Диски и кластеры", "Drives & Clusters"), g_pTexComputer, WIN_MY_COMPUTER }
             };
 
             for (size_t i = 0; i < leftItems.size(); ++i) {
@@ -1807,11 +1828,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 
             // Right Column Items
             std::vector<std::pair<std::string, int>> rightItems = {
-                { "Мои документы", WIN_MY_COMPUTER },
-                { "Панель управления", WIN_CONTROL_PANEL },
-                { "Копейка joive", WIN_DONATE },
-                { "Поиск", WIN_CMD },
-                { "Выполнить...", WIN_CMD }
+                { Tr("Мои документы", "My Documents"), WIN_MY_COMPUTER },
+                { Tr("Панель управления", "Control Panel"), WIN_CONTROL_PANEL },
+                { Tr("Копейка joive", "Support joive"), WIN_DONATE },
+                { Tr("Поиск", "Search"), WIN_CMD },
+                { Tr("Выполнить...", "Run..."), WIN_CMD }
             };
 
             for (size_t i = 0; i < rightItems.size(); ++i) {
@@ -1849,7 +1870,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             if (isHoverShut) {
                 fgDraw->AddRectFilled(shutMin, shutMax, IM_COL32(220, 60, 40, 220), 4.0f);
             }
-            fgDraw->AddText(ImVec2(shutMin.x + 8.0f, shutMin.y + 6.0f), IM_COL32(255, 255, 255, 255), "⏻ Выключение...");
+            fgDraw->AddText(ImVec2(shutMin.x + 8.0f, shutMin.y + 6.0f), IM_COL32(255, 255, 255, 255), Tr("⏻ Выключение...", "⏻ Turn Off Computer..."));
             if (isHoverShut && ImGui::IsMouseClicked(0)) {
                 PostQuitMessage(0);
             }
@@ -1900,8 +1921,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             fgDraw->AddImage((ImTextureID)g_pTexButterfly, ImVec2(startMin.x + 8.0f, startMin.y + 6.0f), ImVec2(startMin.x + 28.0f, startMin.y + 26.0f));
         }
         if (g_FontStartHeader) ImGui::PushFont(g_FontStartHeader);
-        fgDraw->AddText(ImVec2(startMin.x + 34.0f, startMin.y + 7.0f), IM_COL32(0, 0, 0, 180), "Пуск");
-        fgDraw->AddText(ImVec2(startMin.x + 33.0f, startMin.y + 6.0f), IM_COL32(255, 255, 255, 255), "Пуск");
+        fgDraw->AddText(ImVec2(startMin.x + 34.0f, startMin.y + 7.0f), IM_COL32(0, 0, 0, 180), Tr("Пуск", "start"));
+        fgDraw->AddText(ImVec2(startMin.x + 33.0f, startMin.y + 6.0f), IM_COL32(255, 255, 255, 255), Tr("Пуск", "start"));
         if (g_FontStartHeader) ImGui::PopFont();
 
         if (isHoverStart && ImGui::IsMouseClicked(0)) {
@@ -1946,14 +1967,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             taskTabX += taskTabW + 4.0f;
         }
 
-        // --- System Tray ---
-        float trayW = 140.0f;
+        // --- Authentic Windows XP Luna System Tray ---
+        float trayW = 84.0f;
         float trayX = displayW - trayW;
         ImVec2 trayMin(trayX, tbY);
         ImVec2 trayMax(displayW, displayH);
 
-        fgDraw->AddRectFilled(trayMin, trayMax, IM_COL32(15, 47, 118, 255));
-        fgDraw->AddLine(trayMin, ImVec2(trayX, displayH), IM_COL32(10, 30, 80, 255), 1.5f);
+        // Inset darker blue tray gradient
+        fgDraw->AddRectFilledMultiColor(
+            trayMin, trayMax,
+            IM_COL32(15, 66, 160, 255), IM_COL32(15, 66, 160, 255),
+            IM_COL32(11, 46, 126, 255), IM_COL32(11, 46, 126, 255)
+        );
+        // 3D Inset groove on the left border of tray
+        fgDraw->AddLine(trayMin, ImVec2(trayX, displayH), IM_COL32(9, 32, 90, 255), 1.5f);
+        fgDraw->AddLine(ImVec2(trayX + 1.5f, tbY), ImVec2(trayX + 1.5f, displayH), IM_COL32(35, 95, 225, 255), 1.0f);
+        // Inset top shadow
+        fgDraw->AddLine(ImVec2(trayX, tbY), ImVec2(displayW, tbY), IM_COL32(9, 32, 90, 255), 1.0f);
 
         time_t now = time(nullptr);
         tm localTime;
@@ -1961,25 +1991,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         char timeStr[16];
         strftime(timeStr, sizeof(timeStr), "%H:%M", &localTime);
 
+        // Center the clock in the tray
         if (g_FontDefault) ImGui::PushFont(g_FontDefault);
-        fgDraw->AddText(ImVec2(displayW - 54.0f, tbY + 8.0f), IM_COL32(255, 255, 255, 255), timeStr);
+        ImVec2 timeSize = ImGui::CalcTextSize(timeStr);
+        float timeX = trayX + (trayW - timeSize.x) * 0.5f;
+        float timeY = tbY + (32.0f - timeSize.y) * 0.5f;
+
+        // Drop shadow for crisp contrast
+        fgDraw->AddText(ImVec2(timeX + 1.0f, timeY + 1.0f), IM_COL32(0, 0, 0, 140), timeStr);
+        fgDraw->AddText(ImVec2(timeX, timeY), IM_COL32(255, 255, 255, 255), timeStr);
         if (g_FontDefault) ImGui::PopFont();
-
-        float exitW = 58.0f;
-        ImVec2 exitMin(trayX + 8.0f, tbY + 5.0f);
-        ImVec2 exitMax(exitMin.x + exitW, tbY + 27.0f);
-
-        bool isHoverExit = (io.MousePos.x >= exitMin.x && io.MousePos.x <= exitMax.x &&
-                            io.MousePos.y >= exitMin.y && io.MousePos.y <= exitMin.y + 22.0f);
-
-        fgDraw->AddRectFilled(exitMin, exitMax, isHoverExit ? IM_COL32(220, 50, 40, 255) : IM_COL32(160, 35, 30, 220), 3.0f);
-        if (g_FontSmall) ImGui::PushFont(g_FontSmall);
-        fgDraw->AddText(ImVec2(exitMin.x + 6.0f, exitMin.y + 4.0f), IM_COL32(255, 255, 255, 255), "✕ Выход");
-        if (g_FontSmall) ImGui::PopFont();
-
-        if (isHoverExit && ImGui::IsMouseClicked(0)) {
-            PostQuitMessage(0);
-        }
 
         // Rendering DirectX Frame
         ImGui::Render();
